@@ -241,7 +241,7 @@ async function callFn(name, body, timeoutMs = 30000){
     if(!res.ok) throw new Error(data.error || 'Request failed');
     return data;
   } catch(err){
-    if(err.name === 'AbortError') throw new Error('Request timed out — check your connection and try Refresh.');
+    if(err.name === 'AbortError') throw new Error('Request timed out. Check your connection and try Refresh.');
     throw err;
   } finally {
     clearTimeout(timer);
@@ -577,7 +577,7 @@ function renderTier(label, scoreObj, missed){
   let html = `<div class="tier-line">${label}: ${scoreObj.correct}/${scoreObj.total} <span class="score-tag score-${bandClass(scoreObj.band)}">${scoreObj.band}</span>${timedOutTag(scoreObj)}</div>`;
   if(missed && missed.length){
     html += '<ul class="missed-ul">' + missed.map(m=>
-      `<li>"${escapeHtml(m.question)}" — chose: <em>${m.timedOut ? '⏱ timed out — not answered' : escapeHtml(m.chosenText ?? '(blank)')}</em>, correct: <em>${escapeHtml(m.correctOption)}</em></li>`
+      `<li>"${escapeHtml(m.question)}" — chose: <em>${m.timedOut ? '⏱ timed out, not answered' : escapeHtml(m.chosenText ?? '(blank)')}</em>, correct: <em>${escapeHtml(m.correctOption)}</em></li>`
     ).join('') + '</ul>';
   } else {
     html += `<div style="font-size:12px; color:var(--gray); margin-bottom:10px;">No misses in this section.</div>`;
@@ -657,7 +657,7 @@ function renderListeningReview(resultId, items, writtenResponses, tierScores){
       </div>
       ${audio}${script}
       ${question ? `<p class="rv-q"><span class="rv-label">Question</span>${escapeHtml(question)}</p>` : ''}
-      <p class="rv-a"><span class="rv-label">Answer</span><em>${item.timedOut && (item.chosenText == null) ? '⏱ timed out — not answered' : escapeHtml(item.chosenText ?? '(blank)')}</em></p>
+      <p class="rv-a"><span class="rv-label">Answer</span><em>${item.timedOut && (item.chosenText == null) ? '⏱ timed out, not answered' : escapeHtml(item.chosenText ?? '(blank)')}</em></p>
       ${correctText ? `<p class="rv-correct"><span class="rv-label">Correct</span>${escapeHtml(correctText)}</p>` : ''}
     </div>`;
   }).join('');
@@ -689,7 +689,7 @@ function renderWrittenAdvanced(resultId, responses, tierScores){
         ${scoreInput(resultId, 'written_advanced', item.id, scores[item.id])}
       </div>
       ${b.prompt ? `<p class="rv-q"><span class="rv-label">Prompt</span>${escapeHtml(b.prompt)}</p>` : ''}
-      <p class="rv-a"><span class="rv-label">Answer</span>${escapeHtml(item.text || (timedOutIds.includes(item.id) ? '⏱ timed out — no response' : '(no response)'))}</p>
+      <p class="rv-a"><span class="rv-label">Answer</span>${escapeHtml(item.text || (timedOutIds.includes(item.id) ? '⏱ timed out, no response' : '(no response)'))}</p>
     </div>`;
   }).join('');
 }
@@ -728,7 +728,7 @@ function renderSpeaking(resultId, urls, tierScores){
         ${scoreInput(resultId, 'speaking', id, scores[id])}
       </div>
       ${b.prompt ? `<p class="rv-q"><span class="rv-label">Prompt</span>${escapeHtml(b.prompt)}</p>` : ''}
-      <p class="rv-a"><span class="rv-label">Answer</span><em>⏱ timed out — no recording</em></p>
+      <p class="rv-a"><span class="rv-label">Answer</span><em>⏱ timed out, no recording</em></p>
     </div>`;
   });
   return [...recorded, ...missing].join('');

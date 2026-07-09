@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Unified TSAC — Level Evaluation</title>
+<title>Unified TSAC &middot; Level Evaluation</title>
 <link rel="icon" type="image/png" href="favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&family=Barlow+Semi+Condensed:wght@600;700;800&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
@@ -168,11 +168,11 @@
         <tbody id="landing-rows"></tbody>
       </table>
       <ul class="rules">
-        <li><strong>Every question has its own countdown</strong> — it shows at the top of the page.</li>
-        <li>When a question&rsquo;s time runs out, the test <strong>moves on automatically</strong>. You can&rsquo;t go back.</li>
+        <li><strong>Every question has its own countdown</strong>, shown at the top of the page.</li>
+        <li>When a question&rsquo;s time runs out, the test <strong>moves on automatically</strong>. You cannot go back.</li>
         <li>A chime sounds when 10 seconds are left.</li>
         <li>Listening clips play at most 2 times; speaking prompts allow up to 2 recording attempts.</li>
-        <li>Don&rsquo;t refresh or close this page — the clock keeps running.</li>
+        <li>Do not refresh or close this page. The clock keeps running.</li>
         <li>Use a quiet room and have your microphone ready for the speaking part.</li>
       </ul>
       <div class="nav"><button class="primary" id="btn-begin-test">Begin Test</button></div>
@@ -201,7 +201,7 @@
 
   <div class="screen" id="screen-written">
     <div class="card">
-      <span class="tag" id="written-tag">Advanced — Written Response</span>
+      <span class="tag" id="written-tag">Advanced &middot; Written Response</span>
       <div class="qcount" id="written-qcount"></div>
       <div class="prompt-box" id="written-prompt"></div>
       <textarea id="written-input" placeholder="Write your response…"></textarea>
@@ -232,7 +232,7 @@
   <div class="screen" id="screen-mic-check">
     <div class="card">
       <span class="tag">Microphone Check</span>
-      <p class="mc-intro">Before the speaking test begins, let's make sure your microphone sounds clear. This is a one-time check — you won't be asked again during the test.</p>
+      <p class="mc-intro">Before the speaking test begins, make sure your microphone sounds clear. This is a one-time check. You will not be asked again during the test.</p>
       <label class="mc-label" for="mic-select">Microphone</label>
       <div class="mic-check-row">
         <select id="mic-select" class="mic-select"></select>
@@ -351,9 +351,9 @@ let toastTimer = null;
 let saveDebounce = null;
 
 const BLOCK_INFO = {
-  intermediate:     { title:'Intermediate — Multiple Choice', short:'Intermediate' },
-  advanced_mcq:     { title:'Advanced — Multiple Choice', short:'Advanced' },
-  advanced_written: { title:'Advanced — Written Responses', short:'Written' },
+  intermediate:     { title:'Intermediate · Multiple Choice', short:'Intermediate' },
+  advanced_mcq:     { title:'Advanced · Multiple Choice', short:'Advanced' },
+  advanced_written: { title:'Advanced · Written Responses', short:'Written' },
   listening:        { title:'Listening Comprehension', short:'Listening' },
   speaking:         { title:'Speaking', short:'Speaking' },
 };
@@ -537,10 +537,10 @@ function toast(msg){
 function fmtSliceRange(slices){
   const f = (s)=> s % 60 === 0 ? (s/60) + ' min' : (s >= 60 ? Math.floor(s/60) + ':' + String(s%60).padStart(2,'0') + ' min' : s + ' sec');
   const mn = Math.min(...slices), mx = Math.max(...slices);
-  return mn === mx ? f(mn) : f(mn) + ' – ' + f(mx);
+  return mn === mx ? f(mn) : f(mn) + ' to ' + f(mx);
 }
 function renderLanding(){
-  $('landing-greeting').textContent = `Hello${testData.name ? ', ' + testData.name : ''} — welcome to your level evaluation.`;
+  $('landing-greeting').textContent = `Hello${testData.name ? ', ' + testData.name : ''}. Welcome to your level evaluation.`;
   const rows = $('landing-rows'); rows.innerHTML = '';
   blockSeq.forEach(({block})=>{
     const tr = document.createElement('tr');
@@ -550,7 +550,7 @@ function renderLanding(){
   });
   const started = (timing && timing.sectionTimes && Object.keys(timing.sectionTimes).length>0) || completedBlocks.size>0 || !!savedCur;
   $('btn-begin-test').textContent = started ? 'Resume Test' : 'Begin Test';
-  if(started) $('landing-sub').textContent = 'Your test is already in progress — the clock on any started section keeps running. Resume as soon as you can.';
+  if(started) $('landing-sub').textContent = 'Your test is already in progress and the clock on any started section keeps running. Resume as soon as you can.';
   showScreen('screen-landing');
 }
 function showIntro(i){
@@ -582,7 +582,7 @@ async function beginBlock(){
   }catch(e){
     const btn = $('btn-begin-block');
     if(btn){ btn.disabled = false; btn.textContent = 'Try Again'; }
-    toast('Connection problem — try again.');
+    toast('Connection problem, try again.');
     return;
   }
   curSlices = (res.slices && res.slices.length) ? res.slices : blockSlicesFor(block);
@@ -663,12 +663,12 @@ function onQuestionExpired(){
   const { block } = blockSeq[curBlockIdx];
   if(block==='speaking' && mediaRecorder && mediaRecorder.state==='recording'){
     pendingAdvance = true;
-    toast('⏱ Time’s up — saving your recording…');
+    toast('⏱ Time’s up, saving your recording…');
     try{ mediaRecorder.stop(); return; }   // onstop saves the clip, then advances
     catch(_){ pendingAdvance = false; }
   }
   captureCurrent(true);
-  toast('⏱ Time’s up — moving on');
+  toast('⏱ Time’s up, moving on');
   advanceQuestion();
 }
 function advanceQuestion(){
@@ -763,7 +763,7 @@ function buildMcqList(){
 function renderMcq(){
   const tierLabel = mcqTier === 'intermediate' ? 'Intermediate' : 'Advanced';
   const q = mcqList[mcqIdx];
-  $('mcq-tag').textContent = `${tierLabel} — ${q.category==='vocab'?'Vocabulary':'Premises'}`;
+  $('mcq-tag').textContent = `${tierLabel} · ${q.category==='vocab'?'Vocabulary':'Premises'}`;
   $('mcq-qcount').textContent = `Item ${mcqIdx+1} of ${mcqList.length}`;
   $('mcq-qtext').textContent = q.text;
   const optsDiv = $('mcq-options');
@@ -901,7 +901,7 @@ function renderSpeak(){
   const item = testData.speaking[speakIdx];
   const attempts = recordAttempts[speakIdx] || 0;
   const remaining = MAX_RECORD_ATTEMPTS - attempts;
-  $('speak-qcount').textContent = `${item.id} — Item ${speakIdx+1} of ${testData.speaking.length}`;
+  $('speak-qcount').textContent = `${item.id} · Item ${speakIdx+1} of ${testData.speaking.length}`;
   const brokerRow = $('speak-listen-row');
   if(item.audioFile){
     brokerRow.classList.remove('hidden');
@@ -912,7 +912,7 @@ function renderSpeak(){
   } else {
     brokerRow.classList.add('hidden');
   }
-  $('speak-try-note').textContent = `You may record up to ${MAX_RECORD_ATTEMPTS} times per prompt — ${remaining} attempt${remaining===1?'':'s'} remaining.`;
+  $('speak-try-note').textContent = `You may record up to ${MAX_RECORD_ATTEMPTS} times per prompt. ${remaining} attempt${remaining===1?'':'s'} remaining.`;
   $('speak-prompt').textContent = item.prompt;
   const wrap = $('speak-player');
   wrap.innerHTML='';
@@ -1066,7 +1066,7 @@ async function startMicTest(){
       const player=buildAudioPlayer(url,'metadata');
       $('mic-test-player').innerHTML='';
       $('mic-test-player').appendChild(player);
-      setMcState('playing','▶ Playing back — listen to how you sound.');
+      setMcState('playing','▶ Playing back. Listen to how you sound.');
       player._audio.addEventListener('ended',()=>{
         setMcState('done','Did that sound clear and close? If yes, you\'re ready. If it sounded far or noisy, choose another mic and test again.');
         btn.disabled=false; btn.textContent='Test Again';
@@ -1124,7 +1124,7 @@ $('btn-record').addEventListener('click', async ()=>{
       if(pendingAdvance){
         // time expired mid-recording; the partial clip is saved — move on
         pendingAdvance = false;
-        toast('⏱ Time’s up — moving on');
+        toast('⏱ Time’s up, moving on');
         advanceQuestion();
       } else {
         renderSpeak();
@@ -1164,7 +1164,7 @@ async function submitAll(){
     renderSections(true);
     if(timedOutSections.size){
       $('done-stamp').classList.add('timeout');
-      $('done-msg').textContent = 'Time ran out on some questions. Everything you completed has been recorded — you can close this page.';
+      $('done-msg').textContent = 'Time ran out on some questions. Everything you completed has been recorded. You can close this page.';
     }
     showScreen('screen-done');
   } catch(e){
