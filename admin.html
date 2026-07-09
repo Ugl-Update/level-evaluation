@@ -71,6 +71,7 @@
   .audio-block{ margin-top:14px; }
   .audio-block .lbl{ font-family:'Barlow Semi Condensed',sans-serif; font-weight:700; font-size:12px; color:var(--gray); display:block; margin-bottom:4px; }
   .score-pending-review,.score-pending{ color:var(--gray); }
+  .score-timed-out{ color:var(--gold); border-style:dashed; }
   .manual-score-block{ margin-top:18px; padding-top:14px; border-top:1px solid var(--line); }
   .manual-row{ display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end; margin-top:10px; }
   .manual-row label{ margin-bottom:0; font-size:12px; }
@@ -567,12 +568,16 @@ function bandClass(band){
   return band.toLowerCase().replace(/\s+/g,'-');
 }
 
+function timedOutTag(scoreObj){
+  return scoreObj?.timed_out ? ' <span class="score-tag score-timed-out">⏱ Timed out</span>' : '';
+}
+
 function renderTier(label, scoreObj, missed){
   if(!scoreObj || scoreObj.manual) return '';
-  let html = `<div class="tier-line">${label}: ${scoreObj.correct}/${scoreObj.total} <span class="score-tag score-${bandClass(scoreObj.band)}">${scoreObj.band}</span></div>`;
+  let html = `<div class="tier-line">${label}: ${scoreObj.correct}/${scoreObj.total} <span class="score-tag score-${bandClass(scoreObj.band)}">${scoreObj.band}</span>${timedOutTag(scoreObj)}</div>`;
   if(missed && missed.length){
     html += '<ul class="missed-ul">' + missed.map(m=>
-      `<li>"${escapeHtml(m.question)}" — chose: <em>${escapeHtml(m.chosenText ?? '(blank)')}</em>, correct: <em>${escapeHtml(m.correctOption)}</em></li>`
+      `<li>"${escapeHtml(m.question)}" — chose: <em>${m.timedOut ? '⏱ timed out — not answered' : escapeHtml(m.chosenText ?? '(blank)')}</em>, correct: <em>${escapeHtml(m.correctOption)}</em></li>`
     ).join('') + '</ul>';
   } else {
     html += `<div style="font-size:12px; color:var(--gray); margin-bottom:10px;">No misses in this section.</div>`;
@@ -598,7 +603,7 @@ function renderManualSectionHeader(label, scoreObj, maxDefault, itemCount){
   const scored = scoreObj?.scored ?? 0;
   const band = scoreObj?.band || 'Pending review';
   const totalText = scored > 0 ? `${total}/${max}` : `—/${max}`;
-  return `<div class="tier-line">${label}: <span class="section-total" data-section-total-label="${escapeHtml(label)}">${totalText}</span> <span class="score-tag score-${bandClass(band)}">${escapeHtml(band)}</span></div>`;
+  return `<div class="tier-line">${label}: <span class="section-total" data-section-total-label="${escapeHtml(label)}">${totalText}</span> <span class="score-tag score-${bandClass(band)}">${escapeHtml(band)}</span>${timedOutTag(scoreObj)}</div>`;
 }
 
 function legacyListeningHeader(r){
@@ -628,13 +633,14 @@ function renderListeningReview(resultId, items, writtenResponses, tierScores){
     const audio = b.audioFile ? `<div class="aplayer-src" data-src="${escapeHtml(assetUrl(b.audioFile))}" data-preload="none"></div>` : '';
     const script = b.script ? `<p class="rv-script"><span class="rv-label">Transcript</span>"${escapeHtml(b.script)}"</p>` : '';
     const question = item.question || b.question || '';
+    const toTag = item.timedOut ? ' <span class="score-tag score-timed-out">⏱ Timed out</span>' : '';
     if(item.type === 'written'){
       const q2 = item.question2 || b.question2 || '';
       const part2 = q2 ? `<p class="rv-q"><span class="rv-label">Question 2</span>${escapeHtml(q2)}</p>
         <p class="rv-a"><span class="rv-label">Answer 2</span>${escapeHtml(item.response2 || writtenResponses?.[item.id + 'b'] || '(no response)')}</p>` : '';
       return `<div class="review-item">
         <div class="review-item-head">
-          <strong>Listening — ${escapeHtml(item.id)} (written)</strong>
+          <strong>Listening — ${escapeHtml(item.id)} (written)${toTag}</strong>
           ${scoreInput(resultId, 'listening', item.id, scores[item.id])}
         </div>
         ${audio}${script}
@@ -646,12 +652,12 @@ function renderListeningReview(resultId, items, writtenResponses, tierScores){
     const correctText = item.correctOption || (b.options && b.correct != null ? b.options[b.correct] : '');
     return `<div class="review-item">
       <div class="review-item-head">
-        <strong>Listening — ${escapeHtml(item.id)} (MCQ)</strong>
+        <strong>Listening — ${escapeHtml(item.id)} (MCQ)${toTag}</strong>
         ${scoreInput(resultId, 'listening', item.id, scores[item.id])}
       </div>
       ${audio}${script}
       ${question ? `<p class="rv-q"><span class="rv-label">Question</span>${escapeHtml(question)}</p>` : ''}
-      <p class="rv-a"><span class="rv-label">Answer</span><em>${escapeHtml(item.chosenText ?? '(blank)')}</em></p>
+      <p class="rv-a"><span class="rv-label">Answer</span><em>${item.timedOut && (item.chosenText == null) ? '⏱ timed out — not answered' : escapeHtml(item.chosenText ?? '(blank)')}</em></p>
       ${correctText ? `<p class="rv-correct"><span class="rv-label">Correct</span>${escapeHtml(correctText)}</p>` : ''}
     </div>`;
   }).join('');
@@ -673,41 +679,59 @@ function renderWrittenAdvanced(resultId, responses, tierScores){
     { id:'AW_reefer', label:'Written — Advanced (Reefer / Pulp)', text: responses?.AW_reefer || responses?.AW_damaged || '' },
     { id:'AW_airbags', label:'Written — Advanced (Airbags)', text: responses?.AW_airbags || '' },
   ];
+  const timedOutIds = tierScores?.written_advanced?.timed_out_items || [];
   return items.map((item, i) => {
     const b = lk.writtenAdv[item.id] || lk.writtenAdvArr[i] || {};
+    const toTag = timedOutIds.includes(item.id) ? ' <span class="score-tag score-timed-out">⏱ Timed out</span>' : '';
     return `<div class="review-item">
       <div class="review-item-head">
-        <strong>${escapeHtml(item.label)}</strong>
+        <strong>${escapeHtml(item.label)}${toTag}</strong>
         ${scoreInput(resultId, 'written_advanced', item.id, scores[item.id])}
       </div>
       ${b.prompt ? `<p class="rv-q"><span class="rv-label">Prompt</span>${escapeHtml(b.prompt)}</p>` : ''}
-      <p class="rv-a"><span class="rv-label">Answer</span>${escapeHtml(item.text || '(no response)')}</p>
+      <p class="rv-a"><span class="rv-label">Answer</span>${escapeHtml(item.text || (timedOutIds.includes(item.id) ? '⏱ timed out — no response' : '(no response)'))}</p>
     </div>`;
   }).join('');
 }
 
 function renderSpeaking(resultId, urls, tierScores){
   const scores = tierScores?.speaking?.scores || {};
+  const timedOutIds = tierScores?.speaking?.timed_out_items || [];
   const entries = Object.entries(urls || {}).sort((a,b)=>{
     const na = parseInt(a[0].replace('speaking_',''), 10);
     const nb = parseInt(b[0].replace('speaking_',''), 10);
     return na - nb;
   });
-  if(!entries.length) return '<div style="font-size:12px; color:var(--gray);">No recordings.</div>';
+  if(!entries.length && !timedOutIds.length) return '<div style="font-size:12px; color:var(--gray);">No recordings.</div>';
   const lk = bankLookup();
-  return entries.map(([k,v])=>{
+  const recorded = entries.map(([k,v])=>{
     const num = parseInt(k.replace('speaking_',''), 10);
     const id = `S${num + 1}`;
     const b = lk.speaking[id] || lk.speakingArr[num] || {};
+    const toTag = timedOutIds.includes(id) ? ' <span class="score-tag score-timed-out">⏱ Timed out</span>' : '';
     return `<div class="review-item">
       <div class="review-item-head">
-        <strong>${id}</strong>
+        <strong>${id}${toTag}</strong>
         ${scoreInput(resultId, 'speaking', id, scores[id])}
       </div>
       ${b.prompt ? `<p class="rv-q"><span class="rv-label">Prompt</span>${escapeHtml(b.prompt)}</p>` : ''}
       <div class="aplayer-src" data-src="${escapeHtml(v)}" data-preload="none"></div>
     </div>`;
-  }).join('');
+  });
+  // timed-out prompts with no recording at all
+  const haveIds = new Set(entries.map(([k]) => `S${parseInt(k.replace('speaking_',''),10) + 1}`));
+  const missing = timedOutIds.filter(id => !haveIds.has(id)).map(id => {
+    const b = lk.speaking[id] || {};
+    return `<div class="review-item">
+      <div class="review-item-head">
+        <strong>${escapeHtml(id)} <span class="score-tag score-timed-out">⏱ Timed out</span></strong>
+        ${scoreInput(resultId, 'speaking', id, scores[id])}
+      </div>
+      ${b.prompt ? `<p class="rv-q"><span class="rv-label">Prompt</span>${escapeHtml(b.prompt)}</p>` : ''}
+      <p class="rv-a"><span class="rv-label">Answer</span><em>⏱ timed out — no recording</em></p>
+    </div>`;
+  });
+  return [...recorded, ...missing].join('');
 }
 
 function collectManualScores(div){
@@ -840,7 +864,9 @@ function renderAttemptHistory(r){
       ? a.sections.map(s=>SECTION_LABEL[s]||s).join(', ')
       : 'All sections';
     const issued = a.issued_at ? new Date(a.issued_at).toLocaleDateString() : '—';
-    const state = a.completed_at ? `completed ${new Date(a.completed_at).toLocaleString()}` : (a.status || 'pending');
+    const state = a.status === 'timed_out'
+      ? `⏱ timed out ${a.completed_at ? new Date(a.completed_at).toLocaleString() : ''}`
+      : (a.completed_at ? `completed ${new Date(a.completed_at).toLocaleString()}` : (a.status || 'pending'));
     const reason = a.reason ? ` — “${escapeHtml(a.reason)}”` : '';
     items.push(`<li><strong>Attempt ${escapeHtml(String(a.attempt_no ?? '?'))}</strong> — ${escapeHtml(secs)}${reason} <span class="attempt-meta">issued ${escapeHtml(issued)} · ${escapeHtml(state)}</span></li>`);
   });

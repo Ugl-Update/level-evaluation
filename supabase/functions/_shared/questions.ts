@@ -194,6 +194,50 @@ export function publicSpeaking() {
       : { id, prompt, type: 'text' as const });
 }
 
+// ---- Per-question timing (seconds). Every question gets its own slice; unused time is not banked. ----
+export const QUESTION_SECONDS = {
+  mcq: 40,               // intermediate + advanced MCQ items (kept short so answers can't be looked up)
+  advancedWritten: 240,  // each written broker email
+  listeningMcq: 90,      // includes up to 2 plays of the clip
+  listeningWritten: 120,
+  speakingText: 180,     // S1, S2
+  speakingCall: 210,     // S3–S5 (includes playing the broker call)
+};
+
+// Slack allowed past a block's budget before the server force-marks it timed out.
+export const TIMEOUT_GRACE_SECONDS = 60;
+// Fallback slack when the client never reported the block's end (crash/closed tab).
+export const TIMEOUT_FALLBACK_SECONDS = 300;
+
+// Timed blocks. The "advanced" flow section is split in two so MCQ time can't be hoarded for the emails.
+export const TIMED_BLOCKS = ["intermediate", "advanced_mcq", "advanced_written", "listening", "speaking"] as const;
+export type TimedBlock = (typeof TIMED_BLOCKS)[number];
+
+// Seconds allotted to each question of a block, in presentation order.
+export function blockSlices(block: TimedBlock): number[] {
+  const T = QUESTION_SECONDS;
+  switch (block) {
+    case "intermediate": {
+      const b = QUESTION_BANK.intermediate;
+      return [...b.vocab, ...b.premises].map(() => T.mcq);
+    }
+    case "advanced_mcq": {
+      const b = QUESTION_BANK.advanced;
+      return [...b.vocab, ...b.premises].map(() => T.mcq);
+    }
+    case "advanced_written":
+      return WRITTEN_PROMPTS.advanced.map(() => T.advancedWritten);
+    case "listening":
+      return LISTENING.map((q) => (q.type === "written" ? T.listeningWritten : T.listeningMcq));
+    case "speaking":
+      return SPEAKING.map((q) => (q.audioFile ? T.speakingCall : T.speakingText));
+  }
+}
+
+export function blockBudget(block: TimedBlock): number {
+  return blockSlices(block).reduce((a, b) => a + b, 0);
+}
+
 export function band(score: number, total: number): string {
   const pct = score / total;
   if (pct >= 0.875) return "Strong";

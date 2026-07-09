@@ -4,6 +4,12 @@
 -- Sections the active link should include (null = all four sections).
 alter table employees add column if not exists sections text[];
 
+-- Per-block timer anchors, stamped server-side by the start-section function:
+-- { "<block>": "<ISO start>", "<block>_done": "<ISO end>" }
+-- Blocks: intermediate, advanced_mcq, advanced_written, listening, speaking.
+-- Cleared by create-retest so a re-test gets a fresh clock.
+alter table employees add column if not exists section_times jsonb;
+
 -- Attempt history: one row per issued test/re-test.
 create table if not exists attempts (
   id uuid primary key default gen_random_uuid(),

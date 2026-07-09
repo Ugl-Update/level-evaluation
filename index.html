@@ -112,6 +112,22 @@
   .rec-dot.live{ background:var(--red); animation:recpulse 1s ease-in-out infinite; }
   @keyframes recpulse{ 0%,100%{ opacity:1; } 50%{ opacity:0.25; } }
   .hidden{ display:none !important; }
+  .qtimer{ font-family:'Barlow Semi Condensed',sans-serif; font-weight:800; font-size:14px; letter-spacing:0.04em;
+    color:var(--ink); border:1px solid var(--line2); background:var(--card); border-radius:3px; padding:3px 10px; white-space:nowrap; }
+  .qtimer.warn{ color:var(--gold); border-color:var(--gold); }
+  .qtimer.danger{ color:#fff; background:var(--red); border-color:var(--red); animation:recpulse 1s ease-in-out infinite; }
+  .toast{ position:fixed; top:18px; left:50%; transform:translateX(-50%) translateY(-8px); background:var(--ink); color:#fff;
+    font-family:'Barlow Semi Condensed',sans-serif; font-weight:700; font-size:13px; letter-spacing:0.03em; padding:10px 18px;
+    border-radius:3px; opacity:0; pointer-events:none; transition:opacity 0.25s, transform 0.25s; z-index:50; max-width:90vw; text-align:center; }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+  .overview{ width:100%; border-collapse:collapse; margin:16px 0 18px; font-size:13px; }
+  .overview th{ font-family:'Barlow Semi Condensed',sans-serif; font-weight:700; font-size:11px; letter-spacing:0.05em;
+    text-transform:uppercase; color:var(--gray); text-align:left; padding:6px 8px; border-bottom:1px solid var(--line2); }
+  .overview td{ padding:7px 8px; border-bottom:1px solid var(--line); }
+  .rules{ list-style:none; margin:0 0 20px; }
+  .rules li{ padding:6px 0 6px 14px; border-left:2px solid var(--gold); margin-bottom:6px; font-size:13.5px; color:var(--light); }
+  .intro-meta{ font-family:'Barlow Semi Condensed',sans-serif; font-size:13px; color:var(--gray); margin-bottom:14px; }
+  .stamp.timeout{ border-color:var(--gold); color:var(--gold); }
   footer{ margin-top:32px; font-family:'Barlow Semi Condensed',sans-serif; font-size:11px; color:var(--gray); text-align:center; letter-spacing:0.04em; }
 </style>
 </head>
@@ -123,7 +139,10 @@
 
   <div class="formhead">
     <span class="rec">Form EVAL&#8209;002 &middot; English Proficiency Record</span>
-    <span class="status" id="formstatus">In Progress</span>
+    <span style="display:flex; align-items:center; gap:10px;">
+      <span class="qtimer hidden" id="qtimer">&#9201; 0:00</span>
+      <span class="status" id="formstatus">In Progress</span>
+    </span>
   </div>
 
   <div class="sections" id="sections"></div>
@@ -136,6 +155,37 @@
     <div class="card center-msg">
       <h2 style="color:var(--red);">Unable to open this record</h2>
       <p id="error-msg">Something went wrong.</p>
+    </div>
+  </div>
+
+  <div class="screen" id="screen-landing">
+    <div class="card">
+      <span class="tag">Welcome</span>
+      <div class="qtext" id="landing-greeting"></div>
+      <p class="mc-intro" id="landing-sub">This is a timed English evaluation. Read the rules below before you begin.</p>
+      <table class="overview">
+        <thead><tr><th>Part</th><th>Items</th><th>Time per question</th></tr></thead>
+        <tbody id="landing-rows"></tbody>
+      </table>
+      <ul class="rules">
+        <li><strong>Every question has its own countdown</strong> — it shows at the top of the page.</li>
+        <li>When a question&rsquo;s time runs out, the test <strong>moves on automatically</strong>. You can&rsquo;t go back.</li>
+        <li>A chime sounds when 10 seconds are left.</li>
+        <li>Listening clips play at most 2 times; speaking prompts allow up to 2 recording attempts.</li>
+        <li>Don&rsquo;t refresh or close this page — the clock keeps running.</li>
+        <li>Use a quiet room and have your microphone ready for the speaking part.</li>
+      </ul>
+      <div class="nav"><button class="primary" id="btn-begin-test">Begin Test</button></div>
+    </div>
+  </div>
+
+  <div class="screen" id="screen-intro">
+    <div class="card">
+      <span class="tag">Next Section</span>
+      <div class="qtext" id="intro-title"></div>
+      <div class="intro-meta" id="intro-meta"></div>
+      <p class="mc-intro">Each question is timed individually and moves on automatically when its time runs out. The first question&rsquo;s timer starts as soon as you press Begin.</p>
+      <div class="nav"><button class="primary" id="btn-begin-block">Begin</button></div>
     </div>
   </div>
 
@@ -234,13 +284,15 @@
 
   <div class="screen" id="screen-done">
     <div class="card center-msg">
-      <div class="stamp">SUBMITTED</div>
-      <p>Your responses have been recorded. You can close this page.</p>
+      <div class="stamp" id="done-stamp">SUBMITTED</div>
+      <p id="done-msg">Your responses have been recorded. You can close this page.</p>
     </div>
   </div>
 
   <footer>Internal record &middot; not for external distribution</footer>
 </div>
+
+<div class="toast" id="toast"></div>
 
 <script>
 const CONFIG = {
@@ -278,6 +330,33 @@ let audioSpeaking = [null, null, null, null, null];
 let mediaStream=null, mediaRecorder=null, chunks=[];
 let micStream=null, selectedMicId=null;
 let recTimer=null, recSeconds=0;
+
+// ---- Per-question timer state ----
+let timing = null;                  // from get-questions: { blocks:{key:{slices,budget}}, sectionTimes }
+let blockSeq = [];                  // ordered timed blocks for this test: [{ block, section }]
+let curBlockIdx = -1;
+let curSlices = [];                 // seconds per question in the current block
+let curIdx = 0;                     // question index within the current block
+let qDeadline = 0;                  // epoch ms when the current question expires
+let qTicker = null;
+let chimed = false;
+let expiredHandling = false;
+let pendingAdvance = false;         // expiry hit while a recording was in progress
+let timedOutQuestions = new Set();
+let timedOutSections = new Set();
+let completedBlocks = new Set();
+let savedCur = null;                // restored position from sessionStorage
+let chimeCtx = null;
+let toastTimer = null;
+let saveDebounce = null;
+
+const BLOCK_INFO = {
+  intermediate:     { title:'Intermediate — Multiple Choice', short:'Intermediate' },
+  advanced_mcq:     { title:'Advanced — Multiple Choice', short:'Advanced' },
+  advanced_written: { title:'Advanced — Written Responses', short:'Written' },
+  listening:        { title:'Listening Comprehension', short:'Listening' },
+  speaking:         { title:'Speaking', short:'Speaking' },
+};
 
 function $(id){ return document.getElementById(id); }
 function showScreen(id){ document.querySelectorAll('.screen').forEach(s=>s.classList.remove('show')); $(id).classList.add('show'); }
@@ -332,28 +411,323 @@ function advancedHasWritten(){
   const adv = testData.tiers && testData.tiers.advanced;
   return !!(adv && Array.isArray(adv.written) && adv.written.length);
 }
-function startSection(name){
-  const idx = flow.indexOf(name);
-  if(idx>=0) sectionIdx = idx;
+function buildBlockSeq(){
+  blockSeq = [];
+  for(const s of flow){
+    if(s==='intermediate') blockSeq.push({ block:'intermediate', section:s });
+    else if(s==='advanced'){
+      blockSeq.push({ block:'advanced_mcq', section:s });
+      if(advancedHasWritten()) blockSeq.push({ block:'advanced_written', section:s });
+    }
+    else if(s==='listening') blockSeq.push({ block:'listening', section:s });
+    else if(s==='speaking') blockSeq.push({ block:'speaking', section:s });
+  }
+}
+function curBlock(){ return (curBlockIdx>=0 && curBlockIdx<blockSeq.length) ? blockSeq[curBlockIdx].block : null; }
+function blockItems(block){
+  if(block==='intermediate' || block==='advanced_mcq'){
+    const t = testData.tiers[block==='intermediate' ? 'intermediate' : 'advanced'];
+    return [...t.vocab.map(q=>({...q, category:'vocab'})), ...t.premises.map(q=>({...q, category:'premises'}))];
+  }
+  if(block==='advanced_written') return testData.tiers.advanced.written;
+  if(block==='listening') return testData.listening;
+  if(block==='speaking') return testData.speaking;
+  return [];
+}
+function blockSlicesFor(block){
+  const b = timing && timing.blocks && timing.blocks[block];
+  return (b && b.slices && b.slices.length) ? b.slices : blockItems(block).map(()=>60);
+}
+function questionAnswered(block, idx){
+  const item = blockItems(block)[idx];
+  if(!item) return false;
+  if(block==='intermediate') return answers.intermediate[item.category][item.id]!==undefined;
+  if(block==='advanced_mcq') return answers.advanced[item.category][item.id]!==undefined;
+  if(block==='advanced_written') return !!(written[item.id]||'').trim();
+  if(block==='listening'){
+    const isW = item.type==='written' || !item.options?.length;
+    if(isW) return !!(written[item.id]||'').trim() && (!item.question2 || !!(written[item.id+'b']||'').trim());
+    return answers.listening[item.id]!==undefined;
+  }
+  if(block==='speaking') return !!audioSpeaking[idx];
+  return false;
+}
+function flagTimedOut(block, idx){
+  const item = blockItems(block)[idx];
+  if(!item) return;
+  timedOutQuestions.add(item.id);
+  timedOutSections.add(block);
+}
+
+// ---- Local persistence (answers survive a refresh; the server clock keeps running) ----
+const storeKey = token ? 'lvl-eval-' + token : null;
+function saveState(){
+  if(!storeKey) return;
+  const base = {
+    answers, written, listenPlays, speakPlays, recordAttempts,
+    timedOutQuestions:[...timedOutQuestions], timedOutSections:[...timedOutSections],
+    completedBlocks:[...completedBlocks],
+    cur: curBlock() ? { block: curBlock(), idx: curIdx, deadline: qDeadline } : null,
+  };
+  try{ sessionStorage.setItem(storeKey, JSON.stringify({ ...base, audioSpeaking })); }
+  catch(_){ try{ sessionStorage.setItem(storeKey, JSON.stringify(base)); }catch(__){} }
+}
+function scheduleSave(){ clearTimeout(saveDebounce); saveDebounce = setTimeout(()=>{ captureInputs(); saveState(); }, 800); }
+function loadState(){
+  if(!storeKey) return;
+  try{
+    const s = JSON.parse(sessionStorage.getItem(storeKey) || 'null');
+    if(!s) return;
+    if(s.answers) answers = s.answers;
+    if(s.written) written = s.written;
+    if(s.listenPlays) listenPlays = s.listenPlays;
+    if(s.speakPlays) speakPlays = s.speakPlays;
+    if(s.recordAttempts) recordAttempts = s.recordAttempts;
+    if(s.audioSpeaking) audioSpeaking = s.audioSpeaking;
+    timedOutQuestions = new Set(s.timedOutQuestions||[]);
+    timedOutSections = new Set(s.timedOutSections||[]);
+    completedBlocks = new Set(s.completedBlocks||[]);
+    savedCur = s.cur || null;
+  }catch(_){}
+}
+function clearState(){ if(storeKey){ try{ sessionStorage.removeItem(storeKey); }catch(_){} } }
+
+// ---- Countdown UI ----
+function fmtClock(s){ s = Math.max(0, Math.ceil(s)); const m = Math.floor(s/60); return m + ':' + String(s%60).padStart(2,'0'); }
+function hideTimer(){ const el=$('qtimer'); el.classList.add('hidden'); el.classList.remove('warn','danger'); }
+function startTicker(){
+  stopTicker(); chimed = false;
+  $('qtimer').classList.remove('hidden');
+  tickTimer();
+  qTicker = setInterval(tickTimer, 250);
+}
+function stopTicker(){ if(qTicker){ clearInterval(qTicker); qTicker = null; } }
+function tickTimer(){
+  const remain = (qDeadline - Date.now()) / 1000;
+  const el = $('qtimer');
+  el.textContent = '⏱ ' + fmtClock(remain);
+  el.classList.toggle('warn', remain<=15 && remain>10);
+  el.classList.toggle('danger', remain<=10);
+  if(remain<=10 && !chimed){ chimed = true; chime(); }
+  if(remain<=0) onQuestionExpired();
+}
+function chime(){
+  try{
+    if(!chimeCtx) chimeCtx = new (window.AudioContext||window.webkitAudioContext)();
+    if(chimeCtx.state === 'suspended') chimeCtx.resume();
+    const beep = (delay)=>{
+      const o = chimeCtx.createOscillator(), g = chimeCtx.createGain();
+      o.connect(g); g.connect(chimeCtx.destination);
+      o.frequency.value = 880;
+      const t = chimeCtx.currentTime + delay;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.15, t+0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t+0.35);
+      o.start(t); o.stop(t+0.4);
+    };
+    beep(0); beep(0.45);
+  }catch(_){}
+}
+function toast(msg){
+  const t = $('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(()=>t.classList.remove('show'), 2500);
+}
+
+// ---- Landing + section intros ----
+function fmtSliceRange(slices){
+  const f = (s)=> s % 60 === 0 ? (s/60) + ' min' : (s >= 60 ? Math.floor(s/60) + ':' + String(s%60).padStart(2,'0') + ' min' : s + ' sec');
+  const mn = Math.min(...slices), mx = Math.max(...slices);
+  return mn === mx ? f(mn) : f(mn) + ' – ' + f(mx);
+}
+function renderLanding(){
+  $('landing-greeting').textContent = `Hello${testData.name ? ', ' + testData.name : ''} — welcome to your English evaluation.`;
+  const rows = $('landing-rows'); rows.innerHTML = '';
+  blockSeq.forEach(({block})=>{
+    const tr = document.createElement('tr');
+    const items = blockItems(block).length;
+    tr.innerHTML = `<td>${BLOCK_INFO[block].title}</td><td>${items}</td><td>${fmtSliceRange(blockSlicesFor(block))}</td>`;
+    rows.appendChild(tr);
+  });
+  const started = (timing && timing.sectionTimes && Object.keys(timing.sectionTimes).length>0) || completedBlocks.size>0 || !!savedCur;
+  $('btn-begin-test').textContent = started ? 'Resume Test' : 'Begin Test';
+  if(started) $('landing-sub').textContent = 'Your test is already in progress — the clock on any started section keeps running. Resume as soon as you can.';
+  showScreen('screen-landing');
+}
+function showIntro(i){
+  curBlockIdx = i;
+  const { block, section } = blockSeq[i];
+  sectionIdx = flow.indexOf(section);
   renderSections();
-  if(name==='intermediate' || name==='advanced'){
-    mcqTier = name;
-    startMcqSection();
-  } else if(name==='listening'){
-    listenIdx = 0;
-    renderListening();
-    showScreen('screen-listening');
-  } else if(name==='speaking'){
+  hideTimer();
+  if(block==='speaking'){
     showScreen('screen-mic-check');
     setMcState('idle','Tap “Test My Microphone”, then say a few words.');
     setupMicDevices();
+    return;
+  }
+  const n = blockItems(block).length;
+  $('intro-title').textContent = BLOCK_INFO[block].title;
+  $('intro-meta').textContent = `${n} item${n===1?'':'s'} · ${fmtSliceRange(blockSlicesFor(block))} per question`;
+  const btn = $('btn-begin-block');
+  btn.disabled = false; btn.textContent = 'Begin';
+  showScreen('screen-intro');
+}
+
+// ---- Block engine ----
+async function beginBlock(){
+  const { block } = blockSeq[curBlockIdx];
+  let res;
+  try{
+    res = await callFn('start-section', { token, section: block });
+  }catch(e){
+    const btn = $('btn-begin-block');
+    if(btn){ btn.disabled = false; btn.textContent = 'Try Again'; }
+    toast('Connection problem — try again.');
+    return;
+  }
+  curSlices = (res.slices && res.slices.length) ? res.slices : blockSlicesFor(block);
+  // Fast-forward past questions whose time the server says has fully elapsed
+  let idx = 0, elapsed = res.elapsedSeconds || 0;
+  while(idx < curSlices.length && elapsed >= curSlices[idx]){ elapsed -= curSlices[idx]; idx++; }
+  if(savedCur && savedCur.block===block && savedCur.idx > idx){ idx = savedCur.idx; elapsed = 0; }
+  for(let k=0; k<idx && k<curSlices.length; k++){
+    if(!questionAnswered(block, k)) flagTimedOut(block, k);
+  }
+  if(idx >= curSlices.length){ savedCur = null; finishBlock(); return; }
+  curIdx = idx;
+  let deadline = Date.now() + (curSlices[idx] - elapsed) * 1000;
+  if(savedCur && savedCur.block===block && savedCur.idx===idx && savedCur.deadline){
+    deadline = Math.min(deadline, savedCur.deadline);
+  }
+  savedCur = null;
+  qDeadline = deadline;
+  expiredHandling = false;
+  renderCurrentQuestion();
+  startTicker();
+  saveState();
+}
+function renderCurrentQuestion(){
+  const { block } = blockSeq[curBlockIdx];
+  if(block==='intermediate' || block==='advanced_mcq'){
+    mcqTier = block==='intermediate' ? 'intermediate' : 'advanced';
+    buildMcqList();
+    mcqIdx = curIdx;
+    renderMcq();
+    showScreen('screen-mcq');
+  } else if(block==='advanced_written'){
+    writtenIdx = curIdx;
+    renderWritten();
+    showScreen('screen-written');
+  } else if(block==='listening'){
+    listenIdx = curIdx;
+    renderListening();
+    showScreen('screen-listening');
+  } else {
+    speakIdx = curIdx;
+    renderSpeak();
+    showScreen('screen-speak');
   }
 }
-function advanceSection(current){
-  const next = flow[flow.indexOf(current)+1];
-  if(next){ startSection(next); }
+function nextLabel(){
+  if(curIdx < curSlices.length - 1) return 'Next';
+  const nxt = blockSeq[curBlockIdx + 1];
+  return nxt ? `Continue to ${BLOCK_INFO[nxt.block].short}` : 'Submit Assessment';
+}
+// Store whatever is typed in the current question's inputs (no flags, no navigation)
+function captureInputs(){
+  const block = curBlock();
+  if(!block) return;
+  if(block==='advanced_written'){
+    const item = testData.tiers.advanced.written[curIdx];
+    if(item) written[item.id] = $('written-input').value.trim();
+  } else if(block==='listening'){
+    const item = testData.listening[curIdx];
+    if(item && (item.type==='written' || !item.options?.length)){
+      written[item.id] = $('listen-written-input').value.trim();
+      if(item.question2) written[item.id+'b'] = $('listen-written-input2').value.trim();
+    }
+  }
+}
+function captureCurrent(expired){
+  const { block } = blockSeq[curBlockIdx];
+  captureInputs();
+  if(block==='listening'){ try{ $('listen-audio').pause(); }catch(_){} }
+  if(block==='speaking'){ try{ $('speak-broker-audio').pause(); }catch(_){} }
+  if(expired && !questionAnswered(block, curIdx)) flagTimedOut(block, curIdx);
+  saveState();
+}
+function onQuestionExpired(){
+  if(expiredHandling) return;
+  expiredHandling = true;
+  stopTicker();
+  const { block } = blockSeq[curBlockIdx];
+  if(block==='speaking' && mediaRecorder && mediaRecorder.state==='recording'){
+    pendingAdvance = true;
+    toast('⏱ Time’s up — saving your recording…');
+    try{ mediaRecorder.stop(); return; }   // onstop saves the clip, then advances
+    catch(_){ pendingAdvance = false; }
+  }
+  captureCurrent(true);
+  toast('⏱ Time’s up — moving on');
+  advanceQuestion();
+}
+function advanceQuestion(){
+  expiredHandling = false;
+  curIdx++;
+  if(curIdx < curSlices.length){
+    qDeadline = Date.now() + curSlices[curIdx] * 1000;
+    renderCurrentQuestion();
+    startTicker();
+    saveState();
+  } else {
+    finishBlock();
+  }
+}
+function manualNext(){
+  stopTicker();
+  captureCurrent(false);
+  advanceQuestion();
+}
+function finishBlock(){
+  stopTicker(); hideTimer();
+  const { block } = blockSeq[curBlockIdx];
+  completedBlocks.add(block);
+  saveState();
+  callFn('start-section', { token, section: block, done: true }).catch(()=>{});
+  const next = curBlockIdx + 1;
+  if(next < blockSeq.length){ showIntro(next); }
   else { showScreen('screen-submitting'); submitAll(); }
 }
+function resumePoint(){
+  for(let i=0; i<blockSeq.length; i++){ if(!completedBlocks.has(blockSeq[i].block)) return i; }
+  return blockSeq.length;
+}
+
+$('btn-begin-test').addEventListener('click', ()=>{
+  // create the audio context now, while we have a user gesture (needed for the chime)
+  try{ if(!chimeCtx) chimeCtx = new (window.AudioContext||window.webkitAudioContext)(); }catch(_){}
+  const i = resumePoint();
+  if(i >= blockSeq.length){ showScreen('screen-submitting'); submitAll(); return; }
+  const { block, section } = blockSeq[i];
+  const alreadyStarted = timing && timing.sectionTimes && timing.sectionTimes[block];
+  if(alreadyStarted){
+    // clock already running on this block — skip the intro (and mic check) and jump straight in
+    curBlockIdx = i;
+    sectionIdx = flow.indexOf(section);
+    renderSections();
+    beginBlock();
+  } else {
+    showIntro(i);
+  }
+});
+$('btn-begin-block').addEventListener('click', (e)=>{
+  e.currentTarget.disabled = true;
+  e.currentTarget.textContent = 'Starting…';
+  beginBlock();
+});
+window.addEventListener('beforeunload', (e)=>{
+  if(curBlock()){ e.preventDefault(); e.returnValue = ''; }
+});
 
 async function init(){
   if(!token){
@@ -363,20 +737,18 @@ async function init(){
   }
   try{
     testData = await callFn('get-questions', { token });
+    timing = testData.timing || { blocks:{}, sectionTimes:{} };
     buildFlow();
     if(!flow.length){ throw new Error('This test has no sections assigned. Please contact your manager.'); }
+    buildBlockSeq();
+    loadState();
     sectionIdx = 0;
-    startSection(flow[0]);
+    renderSections();
+    renderLanding();
   } catch(e){
     $('error-msg').textContent = e.message;
     showScreen('screen-error');
   }
-}
-
-function startMcqSection(){
-  buildMcqList();
-  showScreen('screen-mcq');
-  renderMcq();
 }
 
 function buildMcqList(){
@@ -404,34 +776,17 @@ function renderMcq(){
       b.classList.add('selected');
       answers[mcqTier][q.category][q.id] = i;
       $('btn-mcq-next').disabled = false;
+      saveState();
     });
     optsDiv.appendChild(b);
   });
   const existing = answers[mcqTier][q.category][q.id];
   $('btn-mcq-next').disabled = existing===undefined;
   if(existing!==undefined) optsDiv.children[existing].classList.add('selected');
-  const isLast = mcqIdx === mcqList.length - 1;
-  let mcqNextLabel = 'Next';
-  if(isLast){
-    if(mcqTier === 'advanced' && advancedHasWritten()){ mcqNextLabel = 'Continue to Written'; }
-    else { const nx = flow[flow.indexOf(mcqTier)+1]; mcqNextLabel = nx ? `Continue to ${SECTION_LABELS[nx]}` : 'Submit Assessment'; }
-  }
-  $('btn-mcq-next').textContent = mcqNextLabel;
+  $('btn-mcq-next').textContent = nextLabel();
 }
 
-$('btn-mcq-next').addEventListener('click', ()=>{
-  if(mcqIdx < mcqList.length - 1){
-    mcqIdx++; renderMcq();
-    return;
-  }
-  if(mcqTier === 'advanced' && advancedHasWritten()){
-    writtenIdx = 0;
-    renderWritten();
-    showScreen('screen-written');
-  } else {
-    advanceSection(mcqTier);
-  }
-});
+$('btn-mcq-next').addEventListener('click', manualNext);
 
 function renderWritten(){
   const prompts = testData.tiers.advanced.written;
@@ -440,24 +795,14 @@ function renderWritten(){
   $('written-prompt').textContent = item.prompt;
   $('written-input').value = written[item.id] || '';
   $('btn-written-next').disabled = !($('written-input').value.trim().length);
-  const wNext = flow[flow.indexOf('advanced')+1];
-  $('btn-written-next').textContent = writtenIdx === prompts.length - 1 ? (wNext ? `Continue to ${SECTION_LABELS[wNext]}` : 'Submit Assessment') : 'Next';
+  $('btn-written-next').textContent = nextLabel();
 }
 
 $('written-input').addEventListener('input', e=>{
   $('btn-written-next').disabled = !(e.target.value.trim().length);
+  scheduleSave();
 });
-$('btn-written-next').addEventListener('click', ()=>{
-  const item = testData.tiers.advanced.written[writtenIdx];
-  written[item.id] = $('written-input').value.trim();
-  const prompts = testData.tiers.advanced.written;
-  if(writtenIdx < prompts.length - 1){
-    writtenIdx++;
-    renderWritten();
-  } else {
-    advanceSection('advanced');
-  }
-});
+$('btn-written-next').addEventListener('click', manualNext);
 
 function updateListenTries(item){
   const used = listenPlays[item.id] || 0;
@@ -512,6 +857,7 @@ function renderListening(){
         b.classList.add('selected');
         answers.listening[item.id] = i;
         $('btn-listen-next').disabled = false;
+        saveState();
       });
       optsDiv.appendChild(b);
     });
@@ -519,8 +865,7 @@ function renderListening(){
     $('btn-listen-next').disabled = existing===undefined;
     if(existing!==undefined) optsDiv.children[existing].classList.add('selected');
   }
-  const lNext = flow[flow.indexOf('listening')+1];
-  $('btn-listen-next').textContent = listenIdx === testData.listening.length - 1 ? (lNext ? `Continue to ${SECTION_LABELS[lNext]}` : 'Submit Assessment') : 'Next';
+  $('btn-listen-next').textContent = nextLabel();
 }
 
 function listeningWrittenComplete(item){
@@ -535,6 +880,7 @@ function onListenWrittenInput(){
   if(isWritten){
     $('btn-listen-next').disabled = !listeningWrittenComplete(item);
   }
+  scheduleSave();
 }
 $('listen-written-input').addEventListener('input', onListenWrittenInput);
 $('listen-written-input2').addEventListener('input', onListenWrittenInput);
@@ -545,22 +891,11 @@ $('btn-play-clip').addEventListener('click', ()=>{
   if(used >= MAX_LISTEN_PLAYS) return;
   listenPlays[item.id] = used + 1;
   updateListenTries(item);
+  saveState();
   $('listen-audio').play();
 });
 
-$('btn-listen-next').addEventListener('click', ()=>{
-  const item = testData.listening[listenIdx];
-  const isWritten = item.type === 'written' || !item.options?.length;
-  if(isWritten){
-    written[item.id] = $('listen-written-input').value.trim();
-    if(item.question2){ written[item.id + 'b'] = $('listen-written-input2').value.trim(); }
-  }
-  if(listenIdx < testData.listening.length - 1){
-    listenIdx++; renderListening();
-  } else {
-    advanceSection('listening');
-  }
-});
+$('btn-listen-next').addEventListener('click', manualNext);
 
 function renderSpeak(){
   const item = testData.speaking[speakIdx];
@@ -592,7 +927,7 @@ function renderSpeak(){
   $('btn-record').textContent='Record';
   $('btn-record').disabled = remaining <= 0;
   $('btn-speak-next').disabled = !audioSpeaking[speakIdx];
-  $('btn-speak-next').textContent = speakIdx === testData.speaking.length - 1 ? 'Submit Assessment' : 'Next';
+  $('btn-speak-next').textContent = nextLabel();
 }
 
 function updateSpeakTries(item){
@@ -608,6 +943,7 @@ $('btn-play-broker').addEventListener('click', ()=>{
   if(used >= MAX_LISTEN_PLAYS) return;
   speakPlays[item.id] = used + 1;
   updateSpeakTries(item);
+  saveState();
   $('speak-broker-audio').play();
 });
 
@@ -759,11 +1095,11 @@ async function startMicTest(){
 }
 $('btn-mic-test').addEventListener('click', startMicTest);
 
-$('btn-mic-continue').addEventListener('click', ()=>{
+$('btn-mic-continue').addEventListener('click', (e)=>{
+  const btn = e.currentTarget;
   cleanupMicTest();
-  speakIdx=0;
-  renderSpeak();
-  showScreen('screen-speak');
+  btn.disabled = true;
+  beginBlock().finally(()=>{ btn.disabled = false; });
 });
 
 $('btn-record').addEventListener('click', async ()=>{
@@ -784,7 +1120,15 @@ $('btn-record').addEventListener('click', async ()=>{
       const blob = new Blob(chunks, {type:'audio/webm'});
       audioSpeaking[speakIdx] = await blobToBase64(blob);
       recordAttempts[speakIdx] = (recordAttempts[speakIdx] || 0) + 1;
-      renderSpeak();
+      saveState();
+      if(pendingAdvance){
+        // time expired mid-recording; the partial clip is saved — move on
+        pendingAdvance = false;
+        toast('⏱ Time’s up — moving on');
+        advanceQuestion();
+      } else {
+        renderSpeak();
+      }
     };
     mediaRecorder.start();
     btn.classList.add('recording'); btn.textContent='Stop';
@@ -796,27 +1140,32 @@ $('btn-record').addEventListener('click', async ()=>{
 
 $('btn-speak-next').addEventListener('click', ()=>{
   if(!audioSpeaking[speakIdx]) return;
-  if(speakIdx < testData.speaking.length - 1){
-    speakIdx++; renderSpeak();
-  } else {
-    advanceSection('speaking');
-  }
+  manualNext();
 });
 
 async function submitAll(){
   try{
+    hideTimer();
     await callFn('submit-assessment', {
       token,
       answers,
       written,
       audio: { speaking: audioSpeaking },
       sections: flow,
+      timedOutSections: [...timedOutSections],
+      timedOutQuestions: [...timedOutQuestions],
     });
     stopRecTimer();
     if(micStream){ micStream.getTracks().forEach(t=>t.stop()); micStream=null; }
     if(mediaStream){ mediaStream.getTracks().forEach(t=>t.stop()); }
+    curBlockIdx = -1; // disarm the beforeunload warning
+    clearState();
     $('formstatus').textContent = 'Filed';
     renderSections(true);
+    if(timedOutSections.size){
+      $('done-stamp').classList.add('timeout');
+      $('done-msg').textContent = 'Time ran out on some questions. Everything you completed has been recorded — you can close this page.';
+    }
     showScreen('screen-done');
   } catch(e){
     $('submit-error-msg').textContent = e.message || 'Check your connection and try again.';

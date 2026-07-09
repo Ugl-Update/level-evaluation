@@ -28,7 +28,7 @@ Deno.serve(async (req) => {
     if (!empId) return new Response(JSON.stringify({ error: "Employee not found." }), { status: 404, headers: corsHeaders });
 
     const token = crypto.randomUUID();
-    const { error: upErr } = await supabase.from("employees").update({ token, sections: secs, status: "pending" }).eq("id", empId);
+    const { error: upErr } = await supabase.from("employees").update({ token, sections: secs, status: "pending", section_times: null }).eq("id", empId);
     if (upErr) throw upErr;
 
     const { data: last } = await supabase.from("attempts").select("attempt_no").eq("employee_id", empId).order("attempt_no", { ascending: false }).limit(1);
