@@ -138,7 +138,7 @@
   </div>
 
   <div class="formhead">
-    <span class="rec">Form EVAL&#8209;002 &middot; English Proficiency Record</span>
+    <span class="rec">Form EVAL&#8209;002 &middot; Level Evaluation Record</span>
     <span style="display:flex; align-items:center; gap:10px;">
       <span class="qtimer hidden" id="qtimer">&#9201; 0:00</span>
       <span class="status" id="formstatus">In Progress</span>
@@ -162,7 +162,7 @@
     <div class="card">
       <span class="tag">Welcome</span>
       <div class="qtext" id="landing-greeting"></div>
-      <p class="mc-intro" id="landing-sub">This is a timed English evaluation. Read the rules below before you begin.</p>
+      <p class="mc-intro" id="landing-sub">This is a timed level evaluation. Read the rules below before you begin.</p>
       <table class="overview">
         <thead><tr><th>Part</th><th>Items</th><th>Time per question</th></tr></thead>
         <tbody id="landing-rows"></tbody>
@@ -540,7 +540,7 @@ function fmtSliceRange(slices){
   return mn === mx ? f(mn) : f(mn) + ' – ' + f(mx);
 }
 function renderLanding(){
-  $('landing-greeting').textContent = `Hello${testData.name ? ', ' + testData.name : ''} — welcome to your English evaluation.`;
+  $('landing-greeting').textContent = `Hello${testData.name ? ', ' + testData.name : ''} — welcome to your level evaluation.`;
   const rows = $('landing-rows'); rows.innerHTML = '';
   blockSeq.forEach(({block})=>{
     const tr = document.createElement('tr');
