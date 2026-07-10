@@ -53,6 +53,13 @@
   .status-tag{ font-family:'Barlow Semi Condensed',sans-serif; font-size:11px; letter-spacing:0.04em; text-transform:uppercase; font-weight:700; }
   .status-pending{ color:var(--gold); }
   .status-completed{ color:var(--green); }
+  .status-not-started{ color:var(--gray); }
+  .status-in-progress{ color:var(--gold); }
+  .chip-row{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
+  .chip{ font-family:'Barlow Semi Condensed',sans-serif; font-weight:700; font-size:11px; letter-spacing:0.04em; text-transform:uppercase;
+    padding:5px 12px; border:1px solid var(--line2); background:var(--card); color:var(--gray); cursor:pointer; border-radius:14px; }
+  .chip:hover{ border-color:var(--gold); color:var(--ink); }
+  .chip.active{ background:var(--red); border-color:var(--red); color:#fff; }
   .hidden{ display:none; }
   .score-tag{ font-family:'Barlow Semi Condensed',sans-serif; font-size:11px; font-weight:700; padding:3px 10px; border:1px solid currentColor; text-transform:uppercase; }
   .score-strong{ color:var(--green); }
@@ -178,10 +185,11 @@
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; gap:10px;">
         <span class="section-label">All Employees</span>
         <div style="display:flex; gap:10px; align-items:center;">
-          <input type="text" id="emp-search" class="search-input" placeholder="Search name…">
+          <input type="text" id="emp-search" class="search-input" placeholder="Search name or link…">
           <button class="small" id="btn-refresh">Refresh</button>
         </div>
       </div>
+      <div class="chip-row" id="emp-filters"></div>
       <table id="emp-table">
         <thead><tr><th>Name</th><th>Status</th><th>Created</th><th>Link</th></tr></thead>
         <tbody id="emp-tbody"></tbody>
@@ -197,6 +205,7 @@
           <button class="small" id="btn-refresh-results">Refresh</button>
         </div>
       </div>
+      <div class="chip-row" id="results-filters"></div>
       <div class="band-legend">
         <span class="score-tag score-strong">Strong</span> ≥ 87.5%
         <span class="score-tag score-adequate">Adequate</span> 62.5–87.5%
@@ -352,6 +361,7 @@ function formatEmpDate(emp){
 let allEmployees = [];
 let empPage = 1;
 let empSearch = '';
+let empFilter = 'all';
 const EMP_PAGE_SIZE = 25;
 
 function buildPager(el, page, total, pageSize, go){
@@ -375,13 +385,46 @@ async function refreshList(){
   } catch(e){ console.error(e); }
 }
 
+// Pending links split by whether the tester ever started the clock.
+function empState(e){
+  if(e.status === 'completed') return 'completed';
+  return (e.section_times && Object.keys(e.section_times).length) ? 'in-progress' : 'not-started';
+}
+const EMP_STATE_LABELS = { 'not-started':'not started', 'in-progress':'in progress', 'completed':'completed' };
+
+function empMatchesSearch(e, q){
+  if(!q) return true;
+  if((e.name || '').toLowerCase().includes(q)) return true;
+  // allow pasting a full test link or a token fragment
+  const m = q.match(/token=([a-f0-9-]+)/i);
+  const tokenQ = m ? m[1] : q;
+  return /^[a-f0-9-]{4,}$/i.test(tokenQ) && (e.token || '').toLowerCase().includes(tokenQ.toLowerCase());
+}
+
+function renderEmpFilters(){
+  const wrap = $('emp-filters');
+  const counts = { all: allEmployees.length, 'not-started':0, 'in-progress':0, completed:0 };
+  allEmployees.forEach(e=>{ counts[empState(e)]++; });
+  wrap.innerHTML = '';
+  [['all','All'],['not-started','Not started'],['in-progress','In progress'],['completed','Completed']].forEach(([key,label])=>{
+    const b = document.createElement('button');
+    b.type='button';
+    b.className = 'chip' + (empFilter===key ? ' active' : '');
+    b.textContent = `${label} (${counts[key]})`;
+    b.addEventListener('click', ()=>{ empFilter = key; empPage = 1; renderEmployees(); });
+    wrap.appendChild(b);
+  });
+}
+
 function renderEmployees(){
+  renderEmpFilters();
   const tbody = $('emp-tbody');
   tbody.innerHTML = '';
   const q = empSearch.trim().toLowerCase();
-  const filtered = q ? allEmployees.filter(e => (e.name || '').toLowerCase().includes(q)) : allEmployees;
+  const filtered = allEmployees.filter(e =>
+    (empFilter==='all' || empState(e)===empFilter) && empMatchesSearch(e, q));
   if(!filtered.length){
-    tbody.innerHTML = `<tr><td colspan="4" style="color:var(--gray); text-align:center; padding:18px;">${q ? 'No employees match your search.' : 'No employees yet — generate a link above to add one.'}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="4" style="color:var(--gray); text-align:center; padding:18px;">${(q || empFilter!=='all') ? 'No employees match this filter.' : 'No employees yet — generate a link above to add one.'}</td></tr>`;
     buildPager($('emp-pager'), 1, 0, EMP_PAGE_SIZE, goEmpPage);
     return;
   }
@@ -391,10 +434,11 @@ function renderEmployees(){
   const start = (empPage - 1) * EMP_PAGE_SIZE;
   filtered.slice(start, start + EMP_PAGE_SIZE).forEach(emp=>{
     const link = `${CONFIG.TEST_PAGE_URL}?token=${emp.token}`;
+    const state = empState(emp);
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${escapeHtml(emp.name)}</td>
-      <td><span class="status-tag status-${emp.status}">${emp.status}</span></td>
+      <td><span class="status-tag status-${state}">${EMP_STATE_LABELS[state]}</span></td>
       <td style="font-size:12px; color:var(--light);">${formatEmpDate(emp)}</td>
       <td style="font-size:11px;"><a href="${link}" target="_blank">open</a> &middot; <a href="#" class="emp-copy" data-link="${escapeHtml(link)}">copy</a></td>
     `;
@@ -929,7 +973,44 @@ function bindResend(bodyDiv, r){
 let allResults = [];
 let resultsPage = 1;
 let resultsSearch = '';
+let resultsFilter = 'all';
 const RESULTS_PAGE_SIZE = 10;
+
+// A submission needs grading while any manual section is still "Pending review".
+function resultNeedsGrading(r){
+  return ['listening','speaking','written_advanced'].some(k=>{
+    const ts = r.tier_scores?.[k];
+    return ts && ts.manual && (ts.band || 'Pending review') === 'Pending review';
+  });
+}
+function resultTimedOut(r){
+  const ts = r.tier_scores || {};
+  return Object.values(ts).some(s => s && s.timed_out === true);
+}
+
+function renderResultsFilters(){
+  const wrap = $('results-filters');
+  const counts = { all: allResults.length, grading:0, graded:0, timedout:0 };
+  allResults.forEach(r=>{
+    if(resultNeedsGrading(r)) counts.grading++; else counts.graded++;
+    if(resultTimedOut(r)) counts.timedout++;
+  });
+  wrap.innerHTML = '';
+  [['all','All'],['grading','Needs grading'],['graded','Graded'],['timedout','⏱ Timed out']].forEach(([key,label])=>{
+    const b = document.createElement('button');
+    b.type='button';
+    b.className = 'chip' + (resultsFilter===key ? ' active' : '');
+    b.textContent = `${label} (${counts[key]})`;
+    b.addEventListener('click', ()=>{ resultsFilter = key; resultsPage = 1; renderResultsList(); });
+    wrap.appendChild(b);
+  });
+}
+function resultMatchesFilter(r){
+  if(resultsFilter==='grading') return resultNeedsGrading(r);
+  if(resultsFilter==='graded') return !resultNeedsGrading(r);
+  if(resultsFilter==='timedout') return resultTimedOut(r);
+  return true;
+}
 
 async function refreshResults(){
   try{
@@ -943,12 +1024,15 @@ async function refreshResults(){
 
 function renderResultsList(){
   try{
+    renderResultsFilters();
     const list = $('results-list');
     list.innerHTML = '';
     const q = resultsSearch.trim().toLowerCase();
-    const filtered = q ? allResults.filter(r => (r.employees?.name || '').toLowerCase().includes(q)) : allResults;
+    const filtered = allResults
+      .filter(r => (!q || (r.employees?.name || '').toLowerCase().includes(q)) && resultMatchesFilter(r))
+      .sort((a,b)=> new Date(b.submitted_at) - new Date(a.submitted_at));
     if(!filtered.length){
-      list.innerHTML = `<p style="color:var(--gray); font-size:13px;">${q ? 'No results match your search.' : 'No completed assessments yet.'}</p>`;
+      list.innerHTML = `<p style="color:var(--gray); font-size:13px;">${(q || resultsFilter!=='all') ? 'No results match this filter.' : 'No completed assessments yet.'}</p>`;
       buildPager($('results-pager'), 1, 0, RESULTS_PAGE_SIZE, goResultsPage);
       return;
     }
@@ -968,7 +1052,7 @@ function renderResultsList(){
             <strong>${escapeHtml(name)}</strong><span style="color:var(--gray); font-size:12px; margin-left:10px;">Submitted ${date}</span>
             <div class="result-summary">${renderResultSummary(r)}</div>
           </div>
-          <span class="score-tag score-${bandClass(r.overall_band)}">${r.overall_score}/${r.overall_total} MCQ — ${r.overall_band}</span>
+          <span>${resultTimedOut(r) ? '<span class="score-tag score-timed-out" style="margin-right:6px;">⏱ Timed out</span>' : ''}<span class="score-tag score-${bandClass(r.overall_band)}">${r.overall_score}/${r.overall_total} MCQ · ${r.overall_band}</span></span>
         </div>
         <div class="result-body${isOpen ? '' : ' hidden'}">
           ${renderTier('Intermediate', r.tier_scores?.intermediate, r.missed_items?.intermediate)}
