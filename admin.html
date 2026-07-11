@@ -755,6 +755,13 @@ function renderSpeaking(resultId, urls, tierScores){
   });
   if(!entries.length && !timedOutIds.length) return '<div style="font-size:12px; color:var(--gray);">No recordings.</div>';
   const lk = bankLookup();
+  // For call items, show the broker clip the tester heard plus its script
+  const brokerCall = (b) => {
+    if(!b.audioFile && !b.script) return '';
+    const player = b.audioFile ? `<div class="aplayer-src" data-src="${escapeHtml(assetUrl(b.audioFile))}" data-preload="none"></div>` : '';
+    const script = b.script ? `<p class="rv-script"><span class="rv-label">Call script</span>"${escapeHtml(b.script)}"</p>` : '';
+    return `<p class="rv-q" style="margin-bottom:4px;"><span class="rv-label">Broker call</span></p>${player}${script}`;
+  };
   const recorded = entries.map(([k,v])=>{
     const num = parseInt(k.replace('speaking_',''), 10);
     const id = `S${num + 1}`;
@@ -766,6 +773,8 @@ function renderSpeaking(resultId, urls, tierScores){
         ${scoreInput(resultId, 'speaking', id, scores[id])}
       </div>
       ${b.prompt ? `<p class="rv-q"><span class="rv-label">Prompt</span>${escapeHtml(b.prompt)}</p>` : ''}
+      ${brokerCall(b)}
+      <p class="rv-q" style="margin-bottom:4px;"><span class="rv-label">Tester's answer</span></p>
       <div class="aplayer-src" data-src="${escapeHtml(v)}" data-preload="none"></div>
     </div>`;
   });
@@ -779,6 +788,7 @@ function renderSpeaking(resultId, urls, tierScores){
         ${scoreInput(resultId, 'speaking', id, scores[id])}
       </div>
       ${b.prompt ? `<p class="rv-q"><span class="rv-label">Prompt</span>${escapeHtml(b.prompt)}</p>` : ''}
+      ${brokerCall(b)}
       <p class="rv-a"><span class="rv-label">Answer</span><em>⏱ timed out, no recording</em></p>
     </div>`;
   });
