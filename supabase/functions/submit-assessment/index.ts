@@ -123,10 +123,19 @@ Deno.serve(async (req) => {
       missedItems[tier] = result.missed;
     }
 
-    // Listening (manual) — reset to pending for re-grading
+    // Listening — MCQ clips auto-score (5 or 0); written clips wait for manual review
     if (sections.includes("listening")) {
       missedItems.listening_review = collectListeningReview(answers?.listening || {}, written || {}, timedOutQs);
-      tierScores.listening = { manual: true, scores: {}, total: 0, max: 35, scored: 0, band: "Pending review" };
+      const autoScores: Record<string, number> = {};
+      for (const q of LISTENING) {
+        if (q.type === "written") continue;
+        autoScores[q.id] = answers?.listening?.[q.id] === q.correct ? 5 : 0;
+      }
+      const autoTotal = Object.values(autoScores).reduce((a, b) => a + b, 0);
+      tierScores.listening = {
+        manual: true, scores: autoScores, total: autoTotal, max: 35,
+        scored: Object.keys(autoScores).length, band: "Pending review",
+      };
       if (timedOutBlocks.has("listening")) tierScores.listening.timed_out = true;
     }
 

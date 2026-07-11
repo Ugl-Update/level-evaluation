@@ -656,9 +656,10 @@ function legacyListeningHeader(r){
   return '';
 }
 
-function scoreInput(resultId, section, itemId, value){
+function scoreInput(resultId, section, itemId, value, auto){
   const v = value === undefined || value === null || value === '' ? '' : String(value);
-  return `<label class="score-input-wrap">Score 0–5<br><input type="number" class="item-score" min="0" max="5" step="1" data-section="${section}" data-item-id="${itemId}" data-result-id="${resultId}" value="${escapeHtml(v)}" placeholder="—"></label>`;
+  const label = auto ? 'Auto (MCQ)' : 'Score 0–5';
+  return `<label class="score-input-wrap">${label}<br><input type="number" class="item-score" min="0" max="5" step="1"${auto ? ' disabled' : ''} data-section="${section}" data-item-id="${itemId}" data-result-id="${resultId}" value="${escapeHtml(v)}" placeholder="—"></label>`;
 }
 
 function clampScoreVal(v){
@@ -694,10 +695,16 @@ function renderListeningReview(resultId, items, writtenResponses, tierScores){
       </div>`;
     }
     const correctText = item.correctOption || (b.options && b.correct != null ? b.options[b.correct] : '');
+    // Real review entries carry correctOption: MCQ clips are auto-scored (5 correct / 0 wrong).
+    // Legacy rows without it keep the editable box.
+    const isAuto = item.correctOption !== undefined;
+    const autoVal = scores[item.id] !== undefined
+      ? scores[item.id]
+      : (item.chosenText != null && item.chosenText === correctText ? 5 : 0);
     return `<div class="review-item">
       <div class="review-item-head">
         <strong>Listening — ${escapeHtml(item.id)} (MCQ)${toTag}</strong>
-        ${scoreInput(resultId, 'listening', item.id, scores[item.id])}
+        ${isAuto ? scoreInput(resultId, 'listening', item.id, autoVal, true) : scoreInput(resultId, 'listening', item.id, scores[item.id])}
       </div>
       ${audio}${script}
       ${question ? `<p class="rv-q"><span class="rv-label">Question</span>${escapeHtml(question)}</p>` : ''}

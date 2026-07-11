@@ -87,30 +87,37 @@ Deno.serve(async (req) => {
     const speakSum = sectionTotal(speakingScores, SPEAKING_IDS);
     const writtenSum = sectionTotal(writtenScores, WRITTEN_ADVANCED_IDS);
 
-    tierScores.listening = {
+    // Keep timed-out markers set by submit-assessment when rewriting a section's scores
+    const carryFlags = (prev: any, next: Record<string, unknown>) => {
+      if (prev?.timed_out) next.timed_out = true;
+      if (prev?.timed_out_items) next.timed_out_items = prev.timed_out_items;
+      return next;
+    };
+
+    tierScores.listening = carryFlags(tierScores.listening, {
       manual: true,
       scores: listeningScores,
       total: listenSum.total,
       max: listenSum.max,
       scored: listenSum.scored,
       band: listenSum.scored > 0 ? bandFromTotal(listenSum.total, listenSum.max) : "Pending review",
-    };
-    tierScores.speaking = {
+    });
+    tierScores.speaking = carryFlags(tierScores.speaking, {
       manual: true,
       scores: speakingScores,
       total: speakSum.total,
       max: speakSum.max,
       scored: speakSum.scored,
       band: speakSum.scored > 0 ? bandFromTotal(speakSum.total, speakSum.max) : "Pending review",
-    };
-    tierScores.written_advanced = {
+    });
+    tierScores.written_advanced = carryFlags(tierScores.written_advanced, {
       manual: true,
       scores: writtenScores,
       total: writtenSum.total,
       max: writtenSum.max,
       scored: writtenSum.scored,
       band: writtenSum.scored > 0 ? bandFromTotal(writtenSum.total, writtenSum.max) : "Pending review",
-    };
+    });
 
     const { error: updateErr } = await supabase
       .from("assessment_results")
