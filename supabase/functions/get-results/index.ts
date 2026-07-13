@@ -24,7 +24,7 @@ Deno.serve(async (req) => {
       .select(`
         id, employee_id, tier_scores, missed_items, written_responses,
         overall_score, overall_total, overall_band, audio_urls, submitted_at,
-        employees ( name )
+        employees ( name, deleted_at )
       `)
       .order("submitted_at", { ascending: false });
 

@@ -90,8 +90,9 @@ Deno.serve(async (req) => {
       : ALL_SECTIONS;
 
     const { data: employee, error: empErr } = await supabase
-      .from("employees").select("id, name, status, section_times").eq("token", token).single();
+      .from("employees").select("id, name, status, section_times, deleted_at").eq("token", token).single();
     if (empErr || !employee) return new Response(JSON.stringify({ error: "Invalid link" }), { status: 404, headers: corsHeaders });
+    if (employee.deleted_at) return new Response(JSON.stringify({ error: "This test link is no longer active." }), { status: 403, headers: corsHeaders });
     if (employee.status === "completed") return new Response(JSON.stringify({ error: "Already submitted" }), { status: 403, headers: corsHeaders });
 
     // Timed-out info: what the client reports, cross-checked against the server's own stamps.

@@ -55,6 +55,7 @@
   .status-completed{ color:var(--green); }
   .status-not-started{ color:var(--gray); }
   .status-in-progress{ color:var(--gold); }
+  .status-deleted{ color:var(--red); }
   .chip-row{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
   .chip{ font-family:'Barlow Semi Condensed',sans-serif; font-weight:700; font-size:11px; letter-spacing:0.04em; text-transform:uppercase;
     padding:5px 12px; border:1px solid var(--line2); background:var(--card); color:var(--gray); cursor:pointer; border-radius:14px; }
@@ -387,10 +388,11 @@ async function refreshList(){
 
 // Pending links split by whether the tester ever started the clock.
 function empState(e){
+  if(e.deleted_at) return 'deleted';
   if(e.status === 'completed') return 'completed';
   return (e.section_times && Object.keys(e.section_times).length) ? 'in-progress' : 'not-started';
 }
-const EMP_STATE_LABELS = { 'not-started':'not started', 'in-progress':'in progress', 'completed':'completed' };
+const EMP_STATE_LABELS = { 'not-started':'not started', 'in-progress':'in progress', 'completed':'completed', 'deleted':'deleted' };
 
 function empMatchesSearch(e, q){
   if(!q) return true;
@@ -403,10 +405,11 @@ function empMatchesSearch(e, q){
 
 function renderEmpFilters(){
   const wrap = $('emp-filters');
-  const counts = { all: allEmployees.length, 'not-started':0, 'in-progress':0, completed:0 };
+  const counts = { all: 0, 'not-started':0, 'in-progress':0, completed:0, deleted:0 };
   allEmployees.forEach(e=>{ counts[empState(e)]++; });
+  counts.all = allEmployees.length - counts.deleted;
   wrap.innerHTML = '';
-  [['all','All'],['not-started','Not started'],['in-progress','In progress'],['completed','Completed']].forEach(([key,label])=>{
+  [['all','All'],['not-started','Not started'],['in-progress','In progress'],['completed','Completed'],['deleted','Deleted']].forEach(([key,label])=>{
     const b = document.createElement('button');
     b.type='button';
     b.className = 'chip' + (empFilter===key ? ' active' : '');
@@ -421,8 +424,11 @@ function renderEmployees(){
   const tbody = $('emp-tbody');
   tbody.innerHTML = '';
   const q = empSearch.trim().toLowerCase();
-  const filtered = allEmployees.filter(e =>
-    (empFilter==='all' || empState(e)===empFilter) && empMatchesSearch(e, q));
+  const filtered = allEmployees.filter(e => {
+    const state = empState(e);
+    const inFilter = empFilter==='all' ? state!=='deleted' : state===empFilter;
+    return inFilter && empMatchesSearch(e, q);
+  });
   if(!filtered.length){
     tbody.innerHTML = `<tr><td colspan="4" style="color:var(--gray); text-align:center; padding:18px;">${(q || empFilter!=='all') ? 'No employees match this filter.' : 'No employees yet — generate a link above to add one.'}</td></tr>`;
     buildPager($('emp-pager'), 1, 0, EMP_PAGE_SIZE, goEmpPage);
@@ -436,11 +442,17 @@ function renderEmployees(){
     const link = `${CONFIG.TEST_PAGE_URL}?token=${emp.token}`;
     const state = empState(emp);
     const tr = document.createElement('tr');
+    const dateCell = state==='deleted'
+      ? `deleted ${new Date(emp.deleted_at).toLocaleDateString()}`
+      : formatEmpDate(emp);
+    const actions = state==='deleted'
+      ? `<a href="#" class="emp-restore" data-id="${escapeHtml(emp.id || '')}" data-token="${escapeHtml(emp.token || '')}">restore</a>`
+      : `<a href="${link}" target="_blank">open</a> &middot; <a href="#" class="emp-copy" data-link="${escapeHtml(link)}">copy</a> &middot; <a href="#" class="emp-delete" data-id="${escapeHtml(emp.id || '')}" data-token="${escapeHtml(emp.token || '')}" data-name="${escapeHtml(emp.name || '')}" style="color:var(--red);">delete</a>`;
     tr.innerHTML = `
       <td>${escapeHtml(emp.name)}</td>
       <td><span class="status-tag status-${state}">${EMP_STATE_LABELS[state]}</span></td>
-      <td style="font-size:12px; color:var(--light);">${formatEmpDate(emp)}</td>
-      <td style="font-size:11px;"><a href="${link}" target="_blank">open</a> &middot; <a href="#" class="emp-copy" data-link="${escapeHtml(link)}">copy</a></td>
+      <td style="font-size:12px; color:var(--light);">${dateCell}</td>
+      <td style="font-size:11px;">${actions}</td>
     `;
     tbody.appendChild(tr);
   });
@@ -453,7 +465,40 @@ function renderEmployees(){
       setTimeout(()=>{ a.textContent = prev; }, 2500);
     });
   });
+  tbody.querySelectorAll('.emp-delete').forEach(a=>{
+    a.addEventListener('click', e=>{
+      e.preventDefault();
+      if(!confirm(`Delete the test for ${a.dataset.name}? Their link stops working and they move to the Deleted view. You can restore them later.`)) return;
+      setEmployeeDeleted(a, 'delete');
+    });
+  });
+  tbody.querySelectorAll('.emp-restore').forEach(a=>{
+    a.addEventListener('click', e=>{
+      e.preventDefault();
+      setEmployeeDeleted(a, 'restore');
+    });
+  });
   buildPager($('emp-pager'), empPage, filtered.length, EMP_PAGE_SIZE, goEmpPage);
+}
+async function setEmployeeDeleted(a, action){
+  const prev = a.textContent;
+  a.textContent = action==='delete' ? 'deleting…' : 'restoring…';
+  try{
+    const body = { password: adminPassword, action };
+    if(a.dataset.id) body.employee_id = a.dataset.id; else body.token = a.dataset.token;
+    const { employee } = await callFn('delete-employee', body);
+    const emp = allEmployees.find(e => (e.id && e.id === employee.id) || e.token === a.dataset.token);
+    if(emp) emp.deleted_at = employee.deleted_at;
+    // hide/show this tester's results too
+    allResults.forEach(r => {
+      if(r.employee_id === employee.id && r.employees) r.employees.deleted_at = employee.deleted_at;
+    });
+    renderEmployees();
+    renderResultsList();
+  }catch(err){
+    a.textContent = prev;
+    alert(err.message || 'Request failed');
+  }
 }
 function goEmpPage(p){ empPage = p; renderEmployees(); }
 $('btn-refresh').addEventListener('click', e=> runWithFeedback(e.currentTarget, refreshList, 'Refreshing…', 'Updated'));
@@ -1007,8 +1052,9 @@ function resultTimedOut(r){
 
 function renderResultsFilters(){
   const wrap = $('results-filters');
-  const counts = { all: allResults.length, grading:0, graded:0, timedout:0 };
-  allResults.forEach(r=>{
+  const visible = allResults.filter(r => !r.employees?.deleted_at);
+  const counts = { all: visible.length, grading:0, graded:0, timedout:0 };
+  visible.forEach(r=>{
     if(resultNeedsGrading(r)) counts.grading++; else counts.graded++;
     if(resultTimedOut(r)) counts.timedout++;
   });
@@ -1029,6 +1075,143 @@ function resultMatchesFilter(r){
   return true;
 }
 
+// ---- Download one test as a single self-contained HTML file (audio embedded) ----
+async function fetchDataUri(url){
+  try{
+    const res = await fetch(url);
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const blob = await res.blob();
+    return await new Promise((resolve, reject)=>{
+      const fr = new FileReader();
+      fr.onload = ()=>resolve(fr.result);
+      fr.onerror = reject;
+      fr.readAsDataURL(blob);
+    });
+  }catch(_){ return null; }
+}
+function downloadHtmlFile(filename, html){
+  const blob = new Blob([html], { type:'text/html' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 10000);
+}
+function reportAudioTag(dataUri, label){
+  if(!dataUri) return `<p class="muted">(${label} unavailable)</p>`;
+  return `<audio controls preload="none" src="${dataUri}" style="width:100%; margin:6px 0;"></audio>`;
+}
+
+async function buildTestReport(r){
+  const { raw: bank, lookup: lk } = await ensureQuestionBank();
+  const esc = escapeHtml;
+  const name = r.employees?.name || 'Unknown';
+  const submitted = new Date(r.submitted_at).toLocaleString();
+  const ts = r.tier_scores || {};
+
+  // fetch every audio file the report needs, in parallel
+  const audio = {};
+  const jobs = [];
+  const want = (key, url)=>{ if(url && audio[key]===undefined){ audio[key]=null; jobs.push(fetchDataUri(url).then(d=>{ audio[key]=d; })); } };
+  if(ts.listening) (bank.listening || []).forEach(it => want('clip_'+it.id, assetUrl(it.audioFile)));
+  if(ts.speaking) (bank.speaking || []).forEach(it => { if(it.audioFile) want('call_'+it.id, assetUrl(it.audioFile)); });
+  Object.entries(r.audio_urls || {}).forEach(([k,v]) => want('rec_'+k, v));
+  await Promise.all(jobs);
+
+  const tag = (band)=>`<span class="tag t-${bandClass(band)}">${esc(band || 'Pending review')}</span>`;
+  const timedTag = (s)=> s?.timed_out ? ' <span class="tag t-timed">⏱ Timed out</span>' : '';
+
+  function mcqSection(label, tier, missed){
+    const t = bank[tier];
+    const s = ts[tier];
+    if(!t || !s) return '';
+    const missedBy = {}; (missed||[]).forEach(m=>{ missedBy[m.id]=m; });
+    const rows = [...(t.vocab||[]), ...(t.premises||[])].map(q=>{
+      const m = missedBy[q.id];
+      const correctText = q.options[q.correct];
+      if(!m) return `<div class="item ok"><p class="q">${esc(q.text)}</p><p><b>Answered:</b> ${esc(correctText)} ✓</p></div>`;
+      const chosen = m.timedOut && m.chosenText==null ? '⏱ timed out, not answered' : (m.chosenText ?? '(blank)');
+      return `<div class="item bad"><p class="q">${esc(q.text)}</p><p><b>Answered:</b> ${esc(chosen)} ✗</p><p><b>Correct:</b> ${esc(correctText)}</p></div>`;
+    }).join('');
+    return `<h2>${esc(label)} · ${s.correct}/${s.total} ${tag(s.band)}${timedTag(s)}</h2>${rows}`;
+  }
+
+  function listeningSection(){
+    const s = ts.listening;
+    if(!s) return '';
+    const scores = s.scores || {};
+    const rows = (r.missed_items?.listening_review || []).map(item=>{
+      const b = lk.listening[item.id] || {};
+      const score = scores[item.id] !== undefined ? `${scores[item.id]}/5` : 'not scored';
+      const player = reportAudioTag(audio['clip_'+item.id], 'clip');
+      const script = b.script ? `<p><b>Script:</b> "${esc(b.script)}"</p>` : '';
+      if(item.type === 'written'){
+        const q2 = item.question2 ? `<p><b>Question 2:</b> ${esc(item.question2)}</p><p><b>Answer 2:</b> ${esc(item.response2 || '(no response)')}</p>` : '';
+        return `<div class="item"><p class="q">${esc(item.id)} (written) · ${score}</p>${player}${script}<p><b>Question:</b> ${esc(item.question || '')}</p><p><b>Answer:</b> ${esc(item.response || '(no response)')}</p>${q2}</div>`;
+      }
+      const chosen = item.timedOut && item.chosenText==null ? '⏱ timed out, not answered' : (item.chosenText ?? '(blank)');
+      return `<div class="item"><p class="q">${esc(item.id)} (MCQ) · ${score}</p>${player}${script}<p><b>Question:</b> ${esc(item.question || '')}</p><p><b>Answered:</b> ${esc(chosen)}</p><p><b>Correct:</b> ${esc(item.correctOption || '')}</p></div>`;
+    }).join('');
+    const total = s.scored > 0 ? `${s.total}/${s.max}` : `—/${s.max}`;
+    return `<h2>Listening · ${total} ${tag(s.band)}${timedTag(s)}</h2>${rows}`;
+  }
+
+  function writtenSection(){
+    const s = ts.written_advanced;
+    if(!s) return '';
+    const scores = s.scores || {};
+    const rows = (bank.advanced?.written || []).map(w=>{
+      const score = scores[w.id] !== undefined ? `${scores[w.id]}/5` : 'not scored';
+      const resp = r.written_responses?.[w.id] || '(no response)';
+      return `<div class="item"><p class="q">${esc(w.id)} · ${score}</p><p><b>Prompt:</b> ${esc(w.prompt)}</p><p><b>Answer:</b> ${esc(resp)}</p></div>`;
+    }).join('');
+    const total = s.scored > 0 ? `${s.total}/${s.max}` : `—/${s.max}`;
+    return `<h2>Written (Advanced) · ${total} ${tag(s.band)}${timedTag(s)}</h2>${rows}`;
+  }
+
+  function speakingSection(){
+    const s = ts.speaking;
+    if(!s) return '';
+    const scores = s.scores || {};
+    const rows = (bank.speaking || []).map((sp, i)=>{
+      const hasRec = (r.audio_urls || {})['speaking_'+i];
+      const score = scores[sp.id] !== undefined ? `${scores[sp.id]}/5` : 'not scored';
+      const call = sp.audioFile ? `<p><b>Broker call:</b></p>${reportAudioTag(audio['call_'+sp.id], 'call')}${sp.script ? `<p><b>Call script:</b> "${esc(sp.script)}"</p>` : ''}` : '';
+      const answer = hasRec ? `<p><b>Tester's answer:</b></p>${reportAudioTag(audio['rec_speaking_'+i], 'recording')}` : `<p><b>Tester's answer:</b> (no recording)</p>`;
+      return `<div class="item"><p class="q">${esc(sp.id)} · ${score}</p><p><b>Prompt:</b> ${esc(sp.prompt)}</p>${call}${answer}</div>`;
+    }).join('');
+    const total = s.scored > 0 ? `${s.total}/${s.max}` : `—/${s.max}`;
+    return `<h2>Speaking · ${total} ${tag(s.band)}${timedTag(s)}</h2>${rows}`;
+  }
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Level Evaluation · ${esc(name)}</title>
+<style>
+ body{ font-family:Arial,Helvetica,sans-serif; background:#EFE7D7; color:#2B2620; max-width:760px; margin:0 auto; padding:24px 16px; line-height:1.5; }
+ h1{ font-size:22px; margin-bottom:4px; }
+ h2{ font-size:16px; margin:26px 0 10px; border-bottom:1px solid rgba(0,0,0,0.16); padding-bottom:6px; }
+ .muted{ color:#8C8270; font-size:13px; }
+ .item{ background:#FBF7EE; border:1px solid rgba(0,0,0,0.16); padding:12px 14px; margin-bottom:10px; font-size:14px; }
+ .item p{ margin:4px 0; }
+ .item .q{ font-weight:bold; }
+ .item.ok{ border-left:3px solid #3E7F5C; }
+ .item.bad{ border-left:3px solid #B5302B; }
+ .tag{ display:inline-block; font-size:11px; font-weight:bold; text-transform:uppercase; border:1px solid currentColor; padding:2px 8px; }
+ .t-strong{ color:#3E7F5C; } .t-adequate{ color:#9C7327; } .t-lacking{ color:#B5302B; } .t-pending-review{ color:#8C8270; }
+ .t-timed{ color:#9C7327; border-style:dashed; }
+</style></head><body>
+<h1>Level Evaluation Record</h1>
+<p><b>${esc(name)}</b> · submitted ${esc(submitted)}</p>
+<p>Overall MCQ: <b>${r.overall_score}/${r.overall_total}</b> ${tag(r.overall_band)}</p>
+<p class="muted">Generated ${new Date().toLocaleString()} · self-contained file, audio included</p>
+${mcqSection('Intermediate MCQ', 'intermediate', r.missed_items?.intermediate)}
+${mcqSection('Advanced MCQ', 'advanced', r.missed_items?.advanced)}
+${writtenSection()}
+${listeningSection()}
+${speakingSection()}
+</body></html>`;
+}
+
 async function refreshResults(){
   try{
     try { await ensureQuestionBank(); } catch(_){ /* enrichment is best-effort */ }
@@ -1046,7 +1229,7 @@ function renderResultsList(){
     list.innerHTML = '';
     const q = resultsSearch.trim().toLowerCase();
     const filtered = allResults
-      .filter(r => (!q || (r.employees?.name || '').toLowerCase().includes(q)) && resultMatchesFilter(r))
+      .filter(r => !r.employees?.deleted_at && (!q || (r.employees?.name || '').toLowerCase().includes(q)) && resultMatchesFilter(r))
       .sort((a,b)=> new Date(b.submitted_at) - new Date(a.submitted_at));
     if(!filtered.length){
       list.innerHTML = `<p style="color:var(--gray); font-size:13px;">${(q || resultsFilter!=='all') ? 'No results match this filter.' : 'No completed assessments yet.'}</p>`;
@@ -1069,7 +1252,7 @@ function renderResultsList(){
             <strong>${escapeHtml(name)}</strong><span style="color:var(--gray); font-size:12px; margin-left:10px;">Submitted ${date}</span>
             <div class="result-summary">${renderResultSummary(r)}</div>
           </div>
-          <span>${resultTimedOut(r) ? '<span class="score-tag score-timed-out" style="margin-right:6px;">⏱ Timed out</span>' : ''}<span class="score-tag score-${bandClass(r.overall_band)}">${r.overall_score}/${r.overall_total} MCQ · ${r.overall_band}</span></span>
+          <span>${resultTimedOut(r) ? '<span class="score-tag score-timed-out" style="margin-right:6px;">⏱ Timed out</span>' : ''}<span class="score-tag score-${bandClass(r.overall_band)}">${r.overall_score}/${r.overall_total} MCQ · ${r.overall_band}</span> <button class="small dl-report" type="button" style="margin-left:8px;">Download</button></span>
         </div>
         <div class="result-body${isOpen ? '' : ' hidden'}">
           ${renderTier('Intermediate', r.tier_scores?.intermediate, r.missed_items?.intermediate)}
@@ -1091,6 +1274,23 @@ function renderResultsList(){
         body.classList.toggle('hidden');
         if(body.classList.contains('hidden')) openResultIds.delete(r.id);
         else openResultIds.add(r.id);
+      });
+      const dlBtn = div.querySelector('.dl-report');
+      dlBtn.addEventListener('click', async (e)=>{
+        e.stopPropagation();
+        const prev = dlBtn.textContent;
+        dlBtn.disabled = true;
+        dlBtn.textContent = 'Preparing…';
+        try{
+          const html = await buildTestReport(r);
+          const safe = (r.employees?.name || 'test').trim().replace(/[^\w-]+/g, '-');
+          const date = new Date(r.submitted_at).toISOString().slice(0, 10);
+          downloadHtmlFile(`Level-Evaluation-${safe}-${date}.html`, html);
+        }catch(err){
+          alert(err.message || 'Download failed');
+        }
+        dlBtn.disabled = false;
+        dlBtn.textContent = prev;
       });
       initAudioPlayers(div);
       bindManualScoring(div.querySelector('.result-body'), r.id);

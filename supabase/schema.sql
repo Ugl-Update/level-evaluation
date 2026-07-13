@@ -4,6 +4,10 @@
 -- Sections the active link should include (null = all four sections).
 alter table employees add column if not exists sections text[];
 
+-- Soft delete: a stamped employee is hidden from admin lists (Deleted view) and
+-- their link stops working. Cleared again by restore in delete-employee.
+alter table employees add column if not exists deleted_at timestamptz;
+
 -- Per-block timer anchors, stamped server-side by the start-section function:
 -- { "<block>": "<ISO start>", "<block>_done": "<ISO end>" }
 -- Blocks: intermediate, advanced_mcq, advanced_written, listening, speaking.

@@ -19,10 +19,12 @@ Deno.serve(async (req) => {
     if (!token) return new Response(JSON.stringify({ error: "Missing token" }), { status: 400, headers: corsHeaders });
 
     const { data: employee, error } = await supabase
-      .from("employees").select("id, name, status, sections, section_times").eq("token", token).single();
+      .from("employees").select("id, name, status, sections, section_times, deleted_at").eq("token", token).single();
 
     if (error || !employee)
       return new Response(JSON.stringify({ error: "This link isn't valid. Check with your manager." }), { status: 404, headers: corsHeaders });
+    if (employee.deleted_at)
+      return new Response(JSON.stringify({ error: "This test link is no longer active. Check with your manager." }), { status: 403, headers: corsHeaders });
     if (employee.status === "completed")
       return new Response(JSON.stringify({ error: "This test has already been submitted." }), { status: 403, headers: corsHeaders });
 
