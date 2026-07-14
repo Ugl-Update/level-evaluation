@@ -597,7 +597,7 @@ function renderFullPreview(data){
   const intCount = (data.intermediate?.vocab?.length || 0) + (data.intermediate?.premises?.length || 0);
   const advCount = (data.advanced?.vocab?.length || 0) + (data.advanced?.premises?.length || 0);
   return [
-    previewSection('01 — Intermediate', `${intCount} MCQ`, renderMcqTier('intermediate', data.intermediate), true),
+    previewSection('01 — Intermediate', `${intCount} MCQ`, renderMcqTier('intermediate', data.intermediate), false),
     previewSection('02 — Advanced MCQ', `${advCount} MCQ`, renderMcqTier('advanced', data.advanced), false),
     previewSection('02 — Advanced Written', `${(data.advanced?.written || []).length} prompts`, renderWrittenPreview(data.advanced?.written || []), false),
     previewSection('03 — Listening', `${(data.listening || []).length} clips`, renderListeningPreview(data.listening || []), false),
