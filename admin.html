@@ -66,6 +66,14 @@
   .score-strong{ color:var(--green); }
   .score-adequate{ color:var(--gold); }
   .score-lacking{ color:var(--red); }
+  .summary-chips{ display:flex; flex-wrap:wrap; gap:5px; margin-top:5px; }
+  .sec-chip{ font-family:'Barlow Semi Condensed',sans-serif; font-weight:700; font-size:11px; letter-spacing:0.03em; text-transform:uppercase;
+    padding:3px 8px; border-radius:2px; white-space:nowrap; }
+  .sec-chip .sec-chip-v{ font-weight:800; margin-left:4px; }
+  .sec-chip.b-strong{ background:rgba(62,127,92,0.14); color:var(--green); }
+  .sec-chip.b-adequate{ background:rgba(156,115,39,0.15); color:var(--gold); }
+  .sec-chip.b-lacking{ background:rgba(181,48,43,0.12); color:var(--red); }
+  .sec-chip.b-pending-review,.sec-chip.b-pending{ background:rgba(0,0,0,0.05); color:var(--gray); }
   .result-block{ border:1px solid var(--line2); margin-bottom:10px; background:var(--card); }
   .result-head{ display:flex; justify-content:space-between; align-items:center; padding:14px 16px; cursor:pointer; }
   .result-head:hover{ background:var(--card2); }
@@ -934,19 +942,24 @@ function bindManualScoring(div, resultId){
   });
 }
 
+function secChip(label, value, band){
+  return `<span class="sec-chip b-${bandClass(band)}">${label}<span class="sec-chip-v">${value}</span></span>`;
+}
 function renderResultSummary(r){
-  const parts = [];
+  const chips = [];
   const int = r.tier_scores?.intermediate;
   const adv = r.tier_scores?.advanced;
-  if(int?.correct !== undefined) parts.push(`MCQ Int ${int.correct}/${int.total}`);
-  if(adv?.correct !== undefined) parts.push(`MCQ Adv ${adv.correct}/${adv.total}`);
-  const ln = r.tier_scores?.listening;
-  const sp = r.tier_scores?.speaking;
-  const wr = r.tier_scores?.written_advanced;
-  if(ln) parts.push(`Listening ${ln.scored > 0 ? `${ln.total}/${ln.max}` : '—'}`);
-  if(wr) parts.push(`Written ${wr.scored > 0 ? `${wr.total}/${wr.max}` : '—'}`);
-  if(sp) parts.push(`Speaking ${sp.scored > 0 ? `${sp.total}/${sp.max}` : '—'}`);
-  return parts.join(' · ');
+  if(int?.correct !== undefined) chips.push(secChip('Int', `${int.correct}/${int.total}`, int.band));
+  if(adv?.correct !== undefined) chips.push(secChip('Adv', `${adv.correct}/${adv.total}`, adv.band));
+  const manual = (label, ts) => {
+    if(!ts) return;
+    const graded = ts.scored > 0 && ts.band && ts.band !== 'Pending review';
+    chips.push(secChip(label, graded ? `${ts.total}/${ts.max}` : 'pending', graded ? ts.band : 'Pending review'));
+  };
+  manual('Listening', r.tier_scores?.listening);
+  manual('Written', r.tier_scores?.written_advanced);
+  manual('Speaking', r.tier_scores?.speaking);
+  return `<div class="summary-chips">${chips.join('')}</div>`;
 }
 
 function renderManualSaveBar(resultId){
