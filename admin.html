@@ -75,7 +75,9 @@
   .sec-chip.b-lacking{ background:rgba(181,48,43,0.12); color:var(--red); }
   .sec-chip.b-pending-review,.sec-chip.b-pending{ background:rgba(0,0,0,0.05); color:var(--gray); }
   .result-block{ border:1px solid var(--line2); margin-bottom:10px; background:var(--card); }
-  .result-head{ display:flex; justify-content:space-between; align-items:center; padding:14px 16px; cursor:pointer; }
+  .result-head{ display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding:14px 16px; cursor:pointer; }
+  .result-head-main{ flex:1 1 auto; min-width:0; }
+  .result-actions{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:flex-end; flex:0 0 auto; }
   .result-head:hover{ background:var(--card2); }
   .result-body{ padding:18px; border-top:1px solid var(--line); background:var(--bg); }
   .tier-line{ font-size:14px; margin:12px 0 4px; font-family:'Barlow Semi Condensed',sans-serif; font-weight:700; }
@@ -1261,11 +1263,15 @@ function renderResultsList(){
       const isOpen = openResultIds.has(r.id);
       div.innerHTML = `
         <div class="result-head">
-          <div>
+          <div class="result-head-main">
             <strong>${escapeHtml(name)}</strong><span style="color:var(--gray); font-size:12px; margin-left:10px;">Submitted ${date}</span>
             <div class="result-summary">${renderResultSummary(r)}</div>
           </div>
-          <span>${resultTimedOut(r) ? '<span class="score-tag score-timed-out" style="margin-right:6px;">⏱ Timed out</span>' : ''}<span class="score-tag score-${bandClass(r.overall_band)}">${r.overall_score}/${r.overall_total} MCQ · ${r.overall_band}</span> <button class="small dl-report" type="button" style="margin-left:8px;">Download</button></span>
+          <div class="result-actions">
+            ${resultTimedOut(r) ? '<span class="score-tag score-timed-out">⏱ Timed out</span>' : ''}
+            <span class="score-tag score-${bandClass(r.overall_band)}">${r.overall_score}/${r.overall_total} MCQ · ${r.overall_band}</span>
+            <button class="small dl-report" type="button">Download</button>
+          </div>
         </div>
         <div class="result-body${isOpen ? '' : ' hidden'}">
           ${renderTier('Intermediate', r.tier_scores?.intermediate, r.missed_items?.intermediate)}
